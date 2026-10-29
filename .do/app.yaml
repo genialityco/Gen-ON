@@ -1,12 +1,13 @@
 # DigitalOcean App Platform: API (apps/api). El frontend va en Netlify.
-# Crear con: doctl apps create --spec .do/app.yaml  (o desde el panel, apuntando al repo)
-# Los valores SECRET se cargan en el panel; aquí quedan vacíos.
+# Crear: panel → Create App → GitHub genialityco/Gen-ON (main), y luego
+# Settings → App Spec → pegar este archivo. O con doctl: doctl apps create --spec .do/app.yaml
+# Los valores SECRET se cargan en el panel (aquí quedan vacíos).
 name: genon-api
 region: nyc
 services:
   - name: api
     github:
-      repo: OWNER/genon # cambiar por el repositorio real
+      repo: genialityco/Gen-ON
       branch: main
       deploy_on_push: true
     source_dir: /
@@ -16,23 +17,27 @@ services:
     instance_size_slug: apps-s-1vcpu-0.5gb
     health_check:
       http_path: /health
+      initial_delay_seconds: 20
     envs:
+      # JSON de la cuenta de servicio de Firebase, en base64
       - key: FIREBASE_SERVICE_ACCOUNT
         scope: RUN_TIME
         type: SECRET
+      # La misma de apps/api/.env (local y producción comparten la base)
       - key: SECRETS_KEY
         scope: RUN_TIME
         type: SECRET
       - key: PUBLIC_API_URL
         scope: RUN_TIME
         value: ${APP_URL}
+      # URL del sitio de Netlify (varias separadas por coma)
       - key: WEB_ORIGINS
         scope: RUN_TIME
         value: https://CAMBIAR.netlify.app
       - key: META_GRAPH_VERSION
         scope: RUN_TIME
         value: v22.0
-      # Solo producción envía la parrilla (local usa la misma base)
+      # Solo producción envía la parrilla
       - key: DISPATCH_ENABLED
         scope: RUN_TIME
         value: "true"

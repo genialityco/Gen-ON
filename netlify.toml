@@ -1,7 +1,8 @@
-# Frontend (apps/web). Variables VITE_* en Site configuration → Environment variables.
+# Frontend (apps/web). Netlify instala las dependencias del monorepo antes del build.
+# Variables VITE_* en Site configuration → Environment variables.
 [build]
   base = "/"
-  command = "npm ci && npm run build -w @genon/web"
+  command = "npm run build -w @genon/web"
   publish = "apps/web/dist"
 
 [build.environment]
