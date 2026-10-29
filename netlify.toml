@@ -1,0 +1,14 @@
+# Frontend (apps/web). Variables VITE_* en Site configuration → Environment variables.
+[build]
+  base = "/"
+  command = "npm ci && npm run build -w @genon/web"
+  publish = "apps/web/dist"
+
+[build.environment]
+  NODE_VERSION = "20"
+
+# SPA: todas las rutas al index
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200

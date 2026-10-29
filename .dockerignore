@@ -1,0 +1,7 @@
+**/node_modules
+**/dist
+**/.env
+**/*firebase-adminsdk*.json
+apps/web/src
+apps/web/public
+.git

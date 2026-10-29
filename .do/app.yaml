@@ -1,0 +1,38 @@
+# DigitalOcean App Platform: API (apps/api). El frontend va en Netlify.
+# Crear con: doctl apps create --spec .do/app.yaml  (o desde el panel, apuntando al repo)
+# Los valores SECRET se cargan en el panel; aquí quedan vacíos.
+name: genon-api
+region: nyc
+services:
+  - name: api
+    github:
+      repo: OWNER/genon # cambiar por el repositorio real
+      branch: main
+      deploy_on_push: true
+    source_dir: /
+    dockerfile_path: apps/api/Dockerfile
+    http_port: 8080
+    instance_count: 1
+    instance_size_slug: apps-s-1vcpu-0.5gb
+    health_check:
+      http_path: /health
+    envs:
+      - key: FIREBASE_SERVICE_ACCOUNT
+        scope: RUN_TIME
+        type: SECRET
+      - key: SECRETS_KEY
+        scope: RUN_TIME
+        type: SECRET
+      - key: PUBLIC_API_URL
+        scope: RUN_TIME
+        value: ${APP_URL}
+      - key: WEB_ORIGINS
+        scope: RUN_TIME
+        value: https://CAMBIAR.netlify.app
+      - key: META_GRAPH_VERSION
+        scope: RUN_TIME
+        value: v22.0
+      # Solo producción envía la parrilla (local usa la misma base)
+      - key: DISPATCH_ENABLED
+        scope: RUN_TIME
+        value: "true"

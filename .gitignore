@@ -1,0 +1,15 @@
+node_modules/
+dist/
+coverage/
+*.log
+
+# Variables y credenciales: nunca al repositorio
+.env
+.env.*
+!.env.example
+*firebase-adminsdk*.json
+service-account*.json
+
+.firebase/
+.netlify/
+.DS_Store

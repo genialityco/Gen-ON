@@ -1,0 +1,22 @@
+{
+  "name": "genon",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Gen.ON: seguimiento de pacientes por WhatsApp para clínicas, centros de estética y consultorios",
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "postinstall": "npm run build -w @genon/shared",
+    "dev:api": "npm run start:dev -w @genon/api",
+    "dev:web": "npm run dev -w @genon/web",
+    "build": "npm run build -w @genon/shared && npm run build -w @genon/api && npm run build -w @genon/web",
+    "test": "npm test -w @genon/api",
+    "superadmin": "npm run superadmin -w @genon/api --",
+    "seed:demo": "npm run seed:demo -w @genon/api --"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

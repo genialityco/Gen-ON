@@ -1,0 +1,15 @@
+{
+  "indexes": [],
+  "fieldOverrides": [
+    {
+      "collectionGroup": "webhook_events",
+      "fieldPath": "body",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "messages",
+      "fieldPath": "raw",
+      "indexes": []
+    }
+  ]
+}
