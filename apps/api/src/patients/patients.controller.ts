@@ -9,6 +9,7 @@ import { EnrollmentsService } from './enrollments.service';
 import { OutboxService } from './outbox.service';
 import { AppointmentsService } from './appointments.service';
 import { UsageService } from './usage.service';
+import { DispatcherService } from './dispatcher.service';
 import {
   AppointmentDto,
   AppointmentStatusDto,
@@ -32,6 +33,7 @@ export class PatientsController {
     private readonly appointments: AppointmentsService,
     private readonly usage: UsageService,
     private readonly templates: TemplatesService,
+    private readonly dispatcher: DispatcherService,
   ) {}
 
   @Get('patients')
@@ -152,9 +154,11 @@ export class PatientsController {
     if (missing.length) {
       throw new BadRequestException(`Esta plantilla necesita ${missing.join(', ')}: inscribe al paciente a un protocolo o agenda una cita con recordatorios.`);
     }
+    const now = !body.send_at;
+    if (now && org.status === 'suspended') throw new BadRequestException('La organización está suspendida: no se envían mensajes');
     const at = body.send_at ? new Date(body.send_at) : new Date();
     if (at.getTime() < Date.now() - 60_000) throw new BadRequestException('La fecha ya pasó');
-    return this.outbox.addManual(orgId, org.timezone, {
+    const item = await this.outbox.addManual(orgId, org.timezone, {
       enrollment_id: null,
       patient_id: patient.id,
       patient_name: patientFullName(patient),
@@ -171,6 +175,9 @@ export class PatientsController {
       manual: true,
       created_by: user.uid,
     });
+    if (!now) return item;
+    await this.dispatcher.dispatchNow(orgId, item.id);
+    return this.outbox.get(orgId, item.id);
   }
 
   @Patch('outbox/:id')
@@ -187,7 +194,10 @@ export class PatientsController {
   @Post('outbox/:id/send-now')
   async sendNow(@Param('orgId') orgId: string, @Param('id') id: string, @CurrentUser() user: AuthUser) {
     const org = await this.orgs.get(orgId);
-    return this.outbox.reschedule(orgId, org.timezone, id, new Date());
+    if (org.status === 'suspended') throw new BadRequestException('La organización está suspendida: no se envían mensajes');
+    await this.outbox.reschedule(orgId, org.timezone, id, new Date());
+    await this.dispatcher.dispatchNow(orgId, id);
+    return this.outbox.get(orgId, id);
   }
 
   @Post('outbox/:id/cancel')

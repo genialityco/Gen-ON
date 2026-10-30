@@ -73,9 +73,14 @@ export function ClinicHomePage() {
           <Text size="sm" c="dimmed">
             {responses} respuestas{problems ? ` · ${problems} con problemas` : ''}
           </Text>
-          <Button component={Link} to={`/org/${orgId}/schedule`} variant="subtle" size="xs" px={0} mt="xs">
-            Ver parrilla
-          </Button>
+          <Group gap="md" mt="xs">
+            <Button component={Link} to={`/org/${orgId}/schedule`} variant="subtle" size="xs" px={0}>
+              Ver parrilla
+            </Button>
+            <Button component={Link} to={`/org/${orgId}/metrics`} variant="subtle" size="xs" px={0}>
+              Ver métricas
+            </Button>
+          </Group>
         </Paper>
 
         <Paper withBorder p="md">

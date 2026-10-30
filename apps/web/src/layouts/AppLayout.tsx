@@ -5,6 +5,7 @@ import {
   IconBuildingHospital,
   IconCalendarEvent,
   IconCalendarTime,
+  IconChartBar,
   IconChevronDown,
   IconHome,
   IconListDetails,
@@ -53,6 +54,7 @@ export function AppLayout() {
         { to: `/org/${orgId}/schedule`, label: 'Parrilla', icon: IconCalendarEvent },
         { to: `/org/${orgId}/protocols`, label: 'Protocolos', icon: IconListDetails },
         { to: `/org/${orgId}/templates`, label: 'Plantillas', icon: IconMessage2 },
+        { to: `/org/${orgId}/metrics`, label: 'Métricas', icon: IconChartBar },
         ...(hasAtLeast(orgRole, 'org_admin')
           ? [
               { to: `/org/${orgId}/team`, label: 'Equipo', icon: IconUsers },

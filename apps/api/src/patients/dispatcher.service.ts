@@ -133,6 +133,22 @@ export class DispatcherService implements OnModuleInit {
     }
   }
 
+  /**
+   * "Enviar ahora" de la clínica: sale en el momento, sin esperar al
+   * despachador (que en local está apagado). Si Meta pide reintentar, queda
+   * programado como cualquier otro envío.
+   */
+  async dispatchNow(orgId: string, id: string) {
+    const now = new Date();
+    const ref = this.outbox(orgId).doc(id);
+    const item = await this.claim(ref, now);
+    if (!item) return; // ya lo tomó el despachador
+    const ctx = await this.loadContext(orgId, now);
+    const outcome = await this.send(ctx, id, item, now);
+    if (outcome.status === 'sent') await this.usage.countMessage(orgId, ctx.month);
+    await this.finish(orgId, ref, item, outcome, now);
+  }
+
   /** Toma el envío si sigue programado y vencido. */
   private async claim(ref: FirebaseFirestore.DocumentReference, now: Date) {
     return this.firebase.db.runTransaction(async (tx) => {

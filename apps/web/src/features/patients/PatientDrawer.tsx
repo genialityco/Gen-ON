@@ -57,7 +57,7 @@ import {
 import { notifyError, notifySuccess } from '../../lib/api';
 import { fmtDateTime, fmtDay } from '../../lib/format';
 import { EnrollmentFields, emptyEnrollment, toEnrollmentInput } from './EnrollmentFields';
-import { OutboxActions } from './OutboxActions';
+import { OutboxActions, notifySendResult } from './OutboxActions';
 import { OutboxBadges, OUTBOX_COLORS } from './OutboxBadges';
 import { patientValidators } from './NewPatientForm';
 import { useOrgRole } from '../../auth/AuthProvider';
@@ -434,8 +434,9 @@ function ManualSend({ orgId, patientId, templates, onDone }: { orgId: string; pa
             send.mutate(
               { patient_id: patientId, template_key: key!, send_at: when ? when.toISOString() : null },
               {
-                onSuccess: () => {
-                  notifySuccess(when ? 'Envío programado' : 'Se enviará en el próximo minuto');
+                onSuccess: (item) => {
+                  if (when) notifySuccess('Envío programado');
+                  else notifySendResult(item);
                   onDone();
                 },
                 onError: notifyError,

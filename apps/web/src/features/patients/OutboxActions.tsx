@@ -5,7 +5,17 @@ import { modals } from '@mantine/modals';
 import { IconCalendarTime, IconDots, IconPlayerPlay, IconUser, IconX } from '@tabler/icons-react';
 import type { OutboxItem } from '@genon/shared';
 import { useOutboxAction } from '../../services/patients';
+import { notifications } from '@mantine/notifications';
 import { notifyError, notifySuccess } from '../../lib/api';
+
+/** Resultado de un "Enviar ahora": sale en el momento o queda el motivo. */
+export function notifySendResult(item: OutboxItem) {
+  if (item.status === 'sent') return notifySuccess(`Mensaje enviado a ${item.patient_name}`);
+  if (item.status === 'scheduled') {
+    return notifications.show({ color: 'yellow', message: `Meta no lo aceptó todavía; se reintentará. ${item.status_reason ?? ''}`.trim() });
+  }
+  notifications.show({ color: 'red', title: 'No se envió', message: item.status_reason ?? 'Revisa el envío en la parrilla' });
+}
 
 const RESCHEDULABLE = ['scheduled', 'failed', 'cancelled', 'skipped'];
 
@@ -28,11 +38,11 @@ export function OutboxActions({ orgId, item, onOpenPatient }: { orgId: string; i
         <Text size="sm">
           {item.status === 'failed' && item.status_reason?.includes('no se sabe si salió')
             ? 'Este envío se interrumpió y pudo haber llegado. Revisa con el paciente antes de reenviarlo.'
-            : `Se envía "${item.step_label}" a ${item.patient_name} en el próximo minuto.`}
+            : `Se envía "${item.step_label}" a ${item.patient_name} ahora.`}
         </Text>
       ),
       labels: { confirm: 'Enviar', cancel: 'Cancelar' },
-      onConfirm: () => run({ id: item.id, action: 'send-now' }, 'Se enviará en el próximo minuto'),
+      onConfirm: () => action.mutate({ id: item.id, action: 'send-now' }, { onSuccess: notifySendResult, onError: notifyError }),
     });
 
   return (

@@ -77,7 +77,8 @@ Ninguna consulta necesita índices compuestos.
 5. **Despachador** (`DISPATCH_ENABLED=true`, cada minuto, solo organizaciones activas): toma cada
    envío con una transacción, lo envía con la versión aprobada y deja el resultado. Límites de Meta
    y fallas temporales se reintentan (1, 4, 9, 16 min); un envío atrasado más de 12 h se omite; uno
-   interrumpido a mitad queda fallido para revisar (pudo haber salido).
+   interrumpido a mitad queda fallido para revisar (pudo haber salido). "Enviar ahora" (envío manual
+   o desde la parrilla) no espera al despachador: sale en el momento y muestra el resultado.
    **Límite mensual** (`monthly_message_limit` de la organización, lo fija el superadmin; vacío =
    sin límite): cuenta los mensajes enviados a pacientes en el mes de la clínica; al llegar al
    límite, el resto del mes queda omitido con el motivo y se puede reenviar si se sube el límite. La
