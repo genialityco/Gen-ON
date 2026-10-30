@@ -6,3 +6,6 @@ export * from './templates';
 export * from './schedule';
 export * from './protocols';
 export * from './patients';
+export * from './appointments';
+export * from './clinical';
+export * from './metrics';

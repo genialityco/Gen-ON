@@ -25,6 +25,7 @@ import { useDebouncedValue } from '@mantine/hooks';
 import { IconMail, IconPlus, IconSearch, IconTrash, IconUserPlus } from '@tabler/icons-react';
 import { sendPasswordResetEmail } from 'firebase/auth';
 import {
+  ORG_ROLES,
   ROLE_LABELS,
   type GlobalRole,
   type ManagedUser,
@@ -45,10 +46,7 @@ const TYPE_OPTIONS = [
   { value: 'superadmin', label: 'Superadmin' },
 ];
 const TYPE_COLORS: Record<AccountType, string> = { superadmin: 'red', staff: 'grape', clinic: 'blue' };
-const CLINIC_ROLES = [
-  { value: 'org_admin', label: ROLE_LABELS.org_admin },
-  { value: 'operator', label: ROLE_LABELS.operator },
-];
+const CLINIC_ROLES = ORG_ROLES.map((r) => ({ value: r, label: ROLE_LABELS[r] }));
 
 const typeOf = (u: Pick<ManagedUser, 'role'>): AccountType => u.role ?? 'clinic';
 const roleOfType = (t: AccountType): GlobalRole | null => (t === 'clinic' ? null : t);

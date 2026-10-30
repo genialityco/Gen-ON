@@ -57,6 +57,7 @@ export class OrganizationsService {
       blocked_weekdays: d.blocked_weekdays ?? DEFAULT_BLOCKED_WEEKDAYS,
       consent_text: d.consent_text ?? DEFAULT_CONSENT_TEXT,
       consent_version: d.consent_version ?? 1,
+      monthly_message_limit: d.monthly_message_limit ?? null,
       created_at: isoOrNull(d.created_at),
       updated_at: isoOrNull(d.updated_at),
     };

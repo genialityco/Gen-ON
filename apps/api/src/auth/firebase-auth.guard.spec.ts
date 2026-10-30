@@ -2,7 +2,7 @@ import { ExecutionContext, ForbiddenException, UnauthorizedException } from '@ne
 import { Reflector } from '@nestjs/core';
 import type { MemberRole } from '@genon/shared';
 import { FirebaseAuthGuard } from './firebase-auth.guard';
-import { OrgAccess, Public, Roles } from './decorators';
+import { Clinical, OrgAccess, Public, Roles } from './decorators';
 import { MembershipsService } from './memberships.service';
 
 class Endpoints {
@@ -12,6 +12,8 @@ class Endpoints {
   @OrgAccess('operator') patients() {}
   @OrgAccess('org_admin') settings() {}
   @OrgAccess('staff') metaSetup() {}
+  @OrgAccess('operator') @Clinical('read') clinicalView() {}
+  @OrgAccess('operator') @Clinical('write') clinicalWrite() {}
   any() {}
 }
 
@@ -26,9 +28,9 @@ const firebase = {
   },
 };
 
-/** Accesos: org1 → ana administradora, luis operador, sofi equipo Gen.iality */
+/** Accesos: org1 → ana administradora, luis operador, sofi equipo Gen.iality, dra profesional de salud */
 const access: Record<string, Record<string, MemberRole>> = {
-  org1: { ana: 'org_admin', luis: 'operator', sofi: 'staff' },
+  org1: { ana: 'org_admin', luis: 'operator', sofi: 'staff', dra: 'clinician' },
   org2: { luis: 'org_admin' },
 };
 const memberships = new MembershipsService(null as any);
@@ -90,6 +92,19 @@ describe('FirebaseAuthGuard', () => {
     expect(await allowed('metaSetup', 'sofi:staff', 'org1')).toBe('staff');
     expect(await allowed('settings', 'sofi:staff', 'org1')).toBe('staff');
     expect(await allowed('metaSetup', 'sofi:staff', 'org2')).toBe('prohibido');
+  });
+
+  it('la ficha clínica solo para el equipo de salud', async () => {
+    expect(await allowed('clinicalView', 'dra', 'org1')).toBe('clinician');
+    expect(await allowed('clinicalWrite', 'dra', 'org1')).toBe('clinician');
+    expect(await allowed('clinicalWrite', 'ana', 'org1')).toBe('org_admin');
+    expect(await allowed('patients', 'dra', 'org1')).toBe('clinician'); // también hace lo del operador
+    expect(await allowed('settings', 'dra', 'org1')).toBe('prohibido');
+    expect(await allowed('clinicalView', 'luis', 'org1')).toBe('prohibido'); // recepción
+    expect(await allowed('clinicalView', 'sofi:staff', 'org1')).toBe('prohibido'); // Gen.iality, aunque tenga más rango
+    expect(await allowed('clinicalView', 'root:superadmin', 'org1')).toBe('superadmin'); // soporte, solo lectura
+    expect(await allowed('clinicalWrite', 'root:superadmin', 'org1')).toBe('prohibido');
+    expect(await allowed('clinicalView', 'dra', 'org2')).toBe('prohibido');
   });
 
   it('un rol global desconocido en el token no da permisos', async () => {

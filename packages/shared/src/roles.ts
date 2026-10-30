@@ -9,19 +9,24 @@ export const GLOBAL_ROLES = ['superadmin', 'staff'] as const;
 export type GlobalRole = (typeof GLOBAL_ROLES)[number];
 
 /** Roles que asigna la clínica a su equipo. */
-export const ORG_ROLES = ['org_admin', 'operator'] as const;
+export const ORG_ROLES = ['org_admin', 'clinician', 'operator'] as const;
 export type OrgRole = (typeof ORG_ROLES)[number];
 
 /** Rol de un acceso a una organización (staff lo asigna solo el superadmin). */
-export const MEMBER_ROLES = ['org_admin', 'operator', 'staff'] as const;
+export const MEMBER_ROLES = ['org_admin', 'clinician', 'operator', 'staff'] as const;
 export type MemberRole = (typeof MEMBER_ROLES)[number];
 
 /** Rol efectivo de una persona dentro de una organización. */
 export type Role = GlobalRole | OrgRole;
 
-/** operador < administrador < equipo Gen.iality < superadmin */
+/**
+ * operador = profesional de salud < administrador < equipo Gen.iality < superadmin.
+ * El profesional hace lo mismo que el operador y además ve la ficha clínica,
+ * que no sigue este orden (ver CLINICAL_*).
+ */
 export const ROLE_RANK: Record<Role, number> = {
   operator: 1,
+  clinician: 1,
   org_admin: 2,
   staff: 3,
   superadmin: 4,
@@ -36,7 +41,19 @@ export const ROLE_LABELS: Record<Role, string> = {
   staff: 'Equipo Gen.iality',
   org_admin: 'Administrador',
   operator: 'Operador',
+  clinician: 'Profesional de salud',
 };
+
+/**
+ * Ficha clínica: solo el equipo de salud de la clínica la lee y escribe. El
+ * equipo Gen.iality no la ve; el superadmin la lee para soporte (queda en el
+ * registro de accesos) pero no escribe.
+ */
+export const CLINICAL_WRITE_ROLES: Role[] = ['clinician', 'org_admin'];
+export const CLINICAL_READ_ROLES: Role[] = [...CLINICAL_WRITE_ROLES, 'superadmin'];
+
+export const canReadClinical = (role: Role | null | undefined) => !!role && CLINICAL_READ_ROLES.includes(role);
+export const canWriteClinical = (role: Role | null | undefined) => !!role && CLINICAL_WRITE_ROLES.includes(role);
 
 /** Custom claims del token de Firebase Auth. */
 export interface AuthClaims {

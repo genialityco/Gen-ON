@@ -2,10 +2,22 @@
 # Crear: panel → Create App → GitHub genialityco/Gen-ON (main), y luego
 # Settings → App Spec → pegar este archivo. O con doctl: doctl apps create --spec .do/app.yaml
 # Los valores SECRET se cargan en el panel (aquí quedan vacíos).
-name: genon-api
-region: nyc
+name: gen-on
+region: atl
+alerts:
+  - rule: DEPLOYMENT_FAILED
+  - rule: DOMAIN_FAILED
+ingress:
+  rules:
+    - component:
+        name: gen-on
+      match:
+        authority:
+          exact: ""
+        path:
+          prefix: /
 services:
-  - name: api
+  - name: gen-on
     github:
       repo: genialityco/Gen-ON
       branch: main

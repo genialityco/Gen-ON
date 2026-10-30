@@ -64,6 +64,88 @@ const ENROLLMENTS = [
 ];
 const OPTED_OUT = 13;
 
+// Citas agendadas a mano: [paciente, días desde hoy, hora, motivo, profesional, recordatorios, estado final]
+const d1 = (time = '09:00') => ({ kind: 'days', days: 1, time });
+const h = (hours) => ({ kind: 'hours', hours });
+const APPOINTMENTS = [
+  [1, 3, '10:00', 'Control de liposucción', 'Dr. Andrés Mejía', [d1(), h(2)], null],
+  [5, 5, '15:00', 'Retoque de toxina botulínica', 'Dra. Laura Gómez', [d1()], null],
+  [2, 2, '08:30', 'Retiro de puntos', 'Dra. Paula Rincón', [d1('17:00'), h(2)], null],
+  [12, 8, '11:30', 'Valoración de rinoplastia', 'Dr. Andrés Mejía', [{ kind: 'days', days: 2, time: '09:00' }, { kind: 'days', days: 0, time: '07:00' }], null],
+  [0, -24, '07:30', 'Rinoplastia', 'Dr. Andrés Mejía', [], 'attended'],
+  [5, -16, '10:00', 'Toxina botulínica', 'Dra. Laura Gómez', [], 'attended'],
+  [7, -5, '14:00', 'Valoración', 'Dra. Laura Gómez', [], 'no_show'],
+];
+
+// Fichas clínicas: [paciente, antecedentes, notas [días desde hoy, tipo, texto, procedimiento]]
+const CLINICAL = [
+  [
+    0,
+    { allergies: 'Ninguna conocida', medications: 'Acetaminofén si hay dolor', conditions: 'Rinitis alérgica', surgeries: 'Ninguna previa', habits: 'No fuma' },
+    [
+      [-24, 'procedure', 'Rinoplastia abierta sin complicaciones. Se entregan indicaciones por escrito.', { name: 'Rinoplastia', area: 'Nariz', product: null, lot: null, quantity: null }],
+      [-17, 'control', 'Edema leve esperado. Se retira férula. Paciente tranquila.', null],
+      [-3, 'evolution', 'Buena evolución, sin signos de infección. Continúa con lavados nasales.', null],
+    ],
+  ],
+  [
+    2,
+    { allergies: 'Penicilina', medications: null, conditions: 'Hipotiroidismo controlado', surgeries: 'Cesárea (2019)', habits: null },
+    [[-3, 'procedure', 'Blefaroplastia superior bilateral. Sutura intradérmica.', { name: 'Blefaroplastia superior', area: 'Párpados', product: null, lot: null, quantity: null }]],
+  ],
+  [
+    5,
+    { allergies: 'Ninguna conocida', medications: null, conditions: null, surgeries: 'Toxina botulínica (2025)', habits: 'Ejercicio diario' },
+    [
+      [-16, 'procedure', 'Aplicación en frente y entrecejo. Se explican cuidados de las primeras 4 horas.', { name: 'Toxina botulínica', area: 'Frente y entrecejo', product: 'Botox 100 U', lot: 'C1234AB', quantity: '20 U' }],
+      [-2, 'control', 'Resultado simétrico. Se agenda retoque leve en entrecejo.', null],
+    ],
+  ],
+];
+
+async function seedAppointments(app, created, templateKey, today) {
+  const appointments = app.get(dist('patients/appointments.service').AppointmentsService);
+  const user = { uid: 'seed-demo', email: 'demo@geniality.com.co', name: 'Datos de demostración', role: 'superadmin' };
+  for (const [i, days, time, reason, professional, timings, status] of APPOINTMENTS) {
+    const r = await appointments.create(
+      orgId,
+      {
+        patient_id: created[i].id,
+        date: shared.addDays(today, days),
+        time,
+        reason,
+        professional,
+        notes: null,
+        reminders: timings.map((timing) => ({ template_key: templateKey, timing })),
+      },
+      user,
+    );
+    await appointments.col(orgId).doc(r.appointment.id).update({ demo: true });
+    if (status) await appointments.setStatus(orgId, r.appointment.id, status);
+  }
+  return APPOINTMENTS.length;
+}
+
+async function seedClinical(app, created, today) {
+  const clinical = app.get(dist('clinical/clinical.service').ClinicalService);
+  const dra = { uid: 'seed-demo-dra', email: 'demo@geniality.com.co', name: 'Dra. Laura Gómez (demo)', role: null };
+  let n = 0;
+  for (const [i, background, notes] of CLINICAL) {
+    const id = created[i].id;
+    await clinical.updateBackground(orgId, id, background, dra, 'clinician');
+    for (const [days, kind, body, procedure] of notes) {
+      await clinical.addNote(orgId, id, { kind, date: shared.addDays(today, days), body, procedure }, dra, 'clinician');
+      n++;
+    }
+    if (i === 5) {
+      const first = (await clinical.view(orgId, id, dra, 'clinician')).notes.find((x) => x.kind === 'procedure');
+      await clinical.addNote(orgId, id, { kind: 'addendum', date: shared.addDays(today, -15), body: 'Corrección: la cantidad aplicada fue 24 U.', amends: first.id }, dra, 'clinician');
+      n++;
+    }
+  }
+  return n;
+}
+
 async function reset(db, org) {
   const ref = db.collection('organizations').doc(orgId);
   const demo = async (sub) => (await ref.collection(sub).where('demo', '==', true).get()).docs;
@@ -78,18 +160,25 @@ async function reset(db, org) {
     }
     n += docs.length;
   };
-  for (const sub of ['enrollments', 'outbox']) {
+  for (const sub of ['enrollments', 'appointments', 'outbox', 'clinical_notes', 'clinical_access']) {
     const docs = (await ref.collection(sub).get()).docs.filter((d) => ids.has(d.get('patient_id')));
     await del(docs);
   }
   for (const sub of ['messages', 'stats_daily', 'wa_contacts', 'protocols', 'templates']) await del(await demo(sub));
+  for (const id of ids) {
+    const rec = ref.collection('clinical_records').doc(id);
+    if ((await rec.get()).exists) {
+      await db.recursiveDelete(rec);
+      n++;
+    }
+  }
   await del(patients);
   // Pacientes del mes: se quitan los de demostración y se recalcula
   for (const u of (await ref.collection('usage_monthly').get()).docs) {
     const map = { ...(u.get('patients') ?? {}) };
     for (const id of ids) delete map[id];
-    await u.ref.set({ patients: map, new_patients: Object.keys(map).length }, { merge: false });
-    await u.ref.set({ month: u.id }, { merge: true });
+    // update reemplaza el mapa completo y conserva el resto (mensajes enviados)
+    await u.ref.update({ month: u.id, patients: map, new_patients: Object.keys(map).length });
   }
   console.log(`${org.name}: ${n} documentos de demostración borrados`);
 }
@@ -324,6 +413,7 @@ async function seedData(app, db, org) {
     protocol_id: null,
     protocol_name: null,
     step_id: null,
+    appointment_id: null,
     step_label: t.label,
     day_offset: null,
     template_key: t.key,
@@ -334,10 +424,14 @@ async function seedData(app, db, org) {
   });
   await patients.optOut(orgId, created[OPTED_OUT].id, 'Pidió no recibir más mensajes (demo)');
 
+  const appts = await seedAppointments(app, created, t.key, today);
+  const notes = await seedClinical(app, created, today);
+
   console.log(`${org.name}: datos de demostración creados`);
   console.log(`  ${Object.keys(byName).length} protocolos, ${Object.keys(tplByKey).length} plantillas`);
   console.log(`  ${created.length} pacientes (1 dado de baja), ${ENROLLMENTS.length} inscripciones, ${scheduled} envíos en la parrilla`);
   console.log(`  ${sent} ya enviados (historial simulado), ${replies} con respuesta del paciente`);
+  console.log(`  ${appts} citas agendadas a mano, ${notes} notas en fichas clínicas`);
 }
 
 (async () => {

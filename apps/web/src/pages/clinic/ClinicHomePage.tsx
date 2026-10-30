@@ -1,7 +1,7 @@
 import { Alert, Badge, Button, Group, Loader, Paper, Progress, SimpleGrid, Stack, Text, Title } from '@mantine/core';
 import { IconBrandWhatsapp, IconCalendarEvent, IconInfoCircle, IconUserPlus } from '@tabler/icons-react';
 import { Link } from 'react-router-dom';
-import { ORG_STATUS_LABELS, PLANS, addDays, zonedTime } from '@genon/shared';
+import { MESSAGE_LIMIT_WARN, ORG_STATUS_LABELS, PLANS, addDays, zonedTime } from '@genon/shared';
 import { useOrgId } from '../../auth/guards';
 import { useOrganization } from '../../services/organizations';
 import { useMetaConnection } from '../../services/metaSetup';
@@ -28,6 +28,8 @@ export function ClinicHomePage() {
   const sent = todayItems.filter((i) => i.status === 'sent').length;
   const problems = todayItems.filter((i) => i.status === 'failed' || i.delivery_status === 'failed').length;
   const responses = todayItems.filter((i) => i.response).length;
+  const limit = usage?.message_limit ?? null;
+  const limitShare = usage && limit !== null ? usage.messages_sent / Math.max(1, limit) : 0;
 
   return (
     <Stack>
@@ -48,7 +50,15 @@ export function ClinicHomePage() {
         </Alert>
       )}
 
-      <SimpleGrid cols={{ base: 1, sm: 3 }}>
+      {usage && limit !== null && limitShare >= MESSAGE_LIMIT_WARN && (
+        <Alert icon={<IconInfoCircle />} color={limitShare >= 1 ? 'red' : 'orange'}>
+          {limitShare >= 1
+            ? `Se alcanzó el límite de ${limit.toLocaleString('es-CO')} mensajes de este mes: los envíos programados no saldrán hasta el próximo mes. Para ampliarlo, contacta a Gen.iality.`
+            : `Van ${usage.messages_sent.toLocaleString('es-CO')} de ${limit.toLocaleString('es-CO')} mensajes de este mes.`}
+        </Alert>
+      )}
+
+      <SimpleGrid cols={{ base: 1, sm: 2, lg: 4 }}>
         <Paper withBorder p="md">
           <Group gap="xs" mb="xs">
             <IconCalendarEvent size={18} />
@@ -93,6 +103,34 @@ export function ClinicHomePage() {
           <Text size="xs" c="dimmed" mt={6}>
             Plan {plan.label}
           </Text>
+        </Paper>
+
+        <Paper withBorder p="md">
+          <Text fw={600} mb="xs">
+            Mensajes este mes
+          </Text>
+          {usage ? (
+            <>
+              <Text size="xl" fw={700}>
+                {usage.messages_sent.toLocaleString('es-CO')}{' '}
+                <Text span size="sm" c="dimmed" fw={400}>
+                  {limit === null ? 'enviados' : `de ${limit.toLocaleString('es-CO')}`}
+                </Text>
+              </Text>
+              {limit !== null && (
+                <Progress
+                  value={Math.min(100, limitShare * 100)}
+                  color={limitShare >= 1 ? 'red' : limitShare >= MESSAGE_LIMIT_WARN ? 'orange' : undefined}
+                  mt={6}
+                />
+              )}
+              <Text size="xs" c="dimmed" mt={6}>
+                {limit === null ? 'Sin límite mensual' : `Quedan ${Math.max(0, limit - usage.messages_sent).toLocaleString('es-CO')}`}
+              </Text>
+            </>
+          ) : (
+            <Loader size="xs" />
+          )}
         </Paper>
 
         <Paper withBorder p="md">

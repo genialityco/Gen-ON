@@ -3,7 +3,7 @@ rules_version = '2';
 // Todas las escrituras pasan por la API (firebase-admin ignora estas reglas).
 // Desde el navegador solo se lee lo de las organizaciones a las que la
 // persona tiene acceso, para las vistas en tiempo real (alertas, bandeja).
-// org_secrets nunca es legible.
+// org_secrets y la ficha clínica nunca son legibles.
 service cloud.firestore {
   match /databases/{database}/documents {
     function signedIn() {
@@ -22,8 +22,11 @@ service cloud.firestore {
     match /organizations/{orgId} {
       allow read: if isSuperadmin() || isMember(orgId);
 
-      match /{document=**} {
-        allow read: if isSuperadmin() || isMember(orgId);
+      // La ficha clínica no se lee desde el navegador: solo por la API, que
+      // revisa el rol de salud y deja registro de cada consulta
+      match /{sub}/{rest=**} {
+        allow read: if (isSuperadmin() || isMember(orgId))
+          && !(sub in ['clinical_records', 'clinical_notes', 'clinical_access']);
       }
     }
 

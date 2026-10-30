@@ -43,6 +43,11 @@ export interface Patient {
   updated_at: string | null;
 }
 
+/** Fila de la lista de pacientes: con los protocolos de sus inscripciones activas. */
+export interface PatientListItem extends Patient {
+  active_protocols: { id: string; name: string }[];
+}
+
 export interface PatientInput {
   first_name: string;
   last_name: string;
@@ -119,6 +124,8 @@ export interface OutboxItem {
   protocol_id: string | null;
   protocol_name: string | null;
   step_id: string | null;
+  /** Recordatorio de una cita (sin protocolo) */
+  appointment_id: string | null;
   step_label: string;
   day_offset: number | null;
   template_key: string;
@@ -150,7 +157,13 @@ export interface MonthlyUsage {
   new_patients: number;
   included: number;
   extra: number;
+  /** Mensajes enviados a pacientes este mes y el límite de la organización */
+  messages_sent: number;
+  message_limit: number | null;
 }
+
+/** Desde aquí se avisa que el límite de mensajes está cerca. */
+export const MESSAGE_LIMIT_WARN = 0.8;
 
 /**
  * Celular del paciente: solo dígitos con indicativo. Un celular colombiano

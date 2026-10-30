@@ -1,5 +1,9 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type {
+  Appointment,
+  AppointmentInput,
+  AppointmentStatus,
+  CreateAppointmentInput,
   CreateEnrollmentInput,
   CreatePatientInput,
   Enrollment,
@@ -7,6 +11,7 @@ import type {
   OutboxItem,
   Patient,
   PatientInput,
+  PatientListItem,
   ScheduleManualInput,
 } from '@genon/shared';
 import { api } from '../lib/api';
@@ -25,7 +30,14 @@ export interface CreatePatientResult extends EnrollResult {
 export interface PatientDetail {
   patient: Patient;
   enrollments: Enrollment[];
+  appointments: Appointment[];
   outbox: OutboxItem[];
+}
+
+export interface AppointmentResult {
+  appointment: Appointment;
+  scheduled: number;
+  warnings: string[];
 }
 
 export const patientKeys = {
@@ -33,6 +45,7 @@ export const patientKeys = {
   one: (orgId: string, id: string) => ['patients', orgId, id] as const,
   outbox: (orgId: string) => ['outbox', orgId] as const,
   usage: (orgId: string) => ['usage', orgId] as const,
+  appointments: (orgId: string) => ['appointments', orgId] as const,
 };
 
 /** Cambios que afectan pacientes, parrilla y uso a la vez. */
@@ -42,13 +55,14 @@ function useInvalidateAll(orgId: string) {
     qc.invalidateQueries({ queryKey: patientKeys.all(orgId) });
     qc.invalidateQueries({ queryKey: patientKeys.outbox(orgId) });
     qc.invalidateQueries({ queryKey: patientKeys.usage(orgId) });
+    qc.invalidateQueries({ queryKey: patientKeys.appointments(orgId) });
   };
 }
 
 export function usePatients(orgId: string) {
   return useQuery({
     queryKey: patientKeys.all(orgId),
-    queryFn: async () => (await api.get<Patient[]>(`/organizations/${orgId}/patients`)).data,
+    queryFn: async () => (await api.get<PatientListItem[]>(`/organizations/${orgId}/patients`)).data,
   });
 }
 
@@ -133,5 +147,33 @@ export function useUsage(orgId: string) {
   return useQuery({
     queryKey: patientKeys.usage(orgId),
     queryFn: async () => (await api.get<MonthlyUsage>(`/organizations/${orgId}/usage`)).data,
+  });
+}
+
+/** Citas entre dos fechas (YYYY-MM-DD, ambas incluidas). */
+export function useAppointments(orgId: string, from: string, to: string) {
+  return useQuery({
+    queryKey: [...patientKeys.appointments(orgId), from, to],
+    queryFn: async () => (await api.get<Appointment[]>(`/organizations/${orgId}/appointments`, { params: { from, to } })).data,
+  });
+}
+
+export function useSaveAppointment(orgId: string) {
+  const invalidate = useInvalidateAll(orgId);
+  return useMutation({
+    mutationFn: async (a: { id: string; input: AppointmentInput } | { id: null; input: CreateAppointmentInput }) =>
+      a.id
+        ? (await api.put<AppointmentResult>(`/organizations/${orgId}/appointments/${a.id}`, a.input)).data
+        : (await api.post<AppointmentResult>(`/organizations/${orgId}/appointments`, a.input)).data,
+    onSuccess: invalidate,
+  });
+}
+
+export function useAppointmentStatus(orgId: string) {
+  const invalidate = useInvalidateAll(orgId);
+  return useMutation({
+    mutationFn: async ({ id, status }: { id: string; status: AppointmentStatus }) =>
+      (await api.post<Appointment>(`/organizations/${orgId}/appointments/${id}/status`, { status })).data,
+    onSuccess: invalidate,
   });
 }

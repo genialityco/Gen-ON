@@ -1,4 +1,4 @@
-import { Button, Paper, Select, SimpleGrid, Stack, TextInput } from '@mantine/core';
+import { Button, NumberInput, Paper, Select, SimpleGrid, Stack, TextInput } from '@mantine/core';
 import { useForm } from '@mantine/form';
 import { ORG_STATUS_LABELS, type Organization, type UpdateOrganizationInput } from '@genon/shared';
 import { useUpdateOrganization } from '../../services/organizations';
@@ -9,19 +9,21 @@ const statusOptions = Object.entries(ORG_STATUS_LABELS).map(([value, label]) => 
 
 export function OrganizationSettings({ org }: { org: Organization }) {
   const update = useUpdateOrganization(org.id);
-  const form = useForm<UpdateOrganizationInput>({
+  const form = useForm<Omit<UpdateOrganizationInput, 'monthly_message_limit'> & { monthly_message_limit: number | string }>({
     initialValues: {
       name: org.name,
       kind: org.kind,
       plan: org.plan,
       status: org.status,
       timezone: org.timezone,
+      monthly_message_limit: org.monthly_message_limit ?? '',
     },
   });
 
   const submit = form.onSubmit(async (values) => {
     try {
-      await update.mutateAsync(values);
+      const limit = values.monthly_message_limit;
+      await update.mutateAsync({ ...values, monthly_message_limit: limit === '' ? null : Number(limit) });
       notifySuccess('Organización actualizada');
     } catch (e) {
       notifyError(e);
@@ -44,6 +46,18 @@ export function OrganizationSettings({ org }: { org: Organization }) {
               {...form.getInputProps('status')}
             />
             <TextInput label="Zona horaria" {...form.getInputProps('timezone')} />
+            <NumberInput
+              label="Límite de mensajes por mes"
+              description="Vacío = sin límite. Al llegar al límite, los envíos del resto del mes quedan omitidos."
+              placeholder="Sin límite"
+              min={0}
+              max={1_000_000}
+              allowDecimal={false}
+              allowNegative={false}
+              thousandSeparator="."
+              decimalSeparator=","
+              {...form.getInputProps('monthly_message_limit')}
+            />
           </SimpleGrid>
           <Button type="submit" loading={update.isPending} w="fit-content">
             Guardar

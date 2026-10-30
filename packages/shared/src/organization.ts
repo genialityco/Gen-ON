@@ -42,6 +42,8 @@ export interface Organization {
   /** Texto de autorización de datos que acepta el paciente ({{clinica}} se reemplaza) */
   consent_text: string;
   consent_version: number;
+  /** Mensajes a pacientes por mes (hora de la clínica); null = sin límite */
+  monthly_message_limit: number | null;
   created_at: string | null;
   updated_at: string | null;
 }
@@ -60,7 +62,7 @@ export interface CreateOrganizationInput {
 }
 
 export type UpdateOrganizationInput = Partial<
-  Pick<Organization, 'name' | 'kind' | 'plan' | 'status' | 'timezone'>
+  Pick<Organization, 'name' | 'kind' | 'plan' | 'status' | 'timezone' | 'monthly_message_limit'>
 >;
 
 export interface Member {

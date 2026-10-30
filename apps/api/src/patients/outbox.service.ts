@@ -4,6 +4,9 @@ import {
   computeSendAt,
   localDate,
   orderedSteps,
+  reminderLabel,
+  reminderSendAt,
+  type Appointment,
   type Enrollment,
   type Organization,
   type OutboxItem,
@@ -28,6 +31,7 @@ export interface NewOutboxItem {
   protocol_id: string | null;
   protocol_name: string | null;
   step_id: string | null;
+  appointment_id: string | null;
   step_label: string;
   day_offset: number | null;
   template_key: string;
@@ -59,6 +63,7 @@ export class OutboxService {
       protocol_id: d.protocol_id ?? null,
       protocol_name: d.protocol_name ?? null,
       step_id: d.step_id ?? null,
+      appointment_id: d.appointment_id ?? null,
       step_label: d.step_label,
       day_offset: d.day_offset ?? null,
       template_key: d.template_key,
@@ -127,6 +132,7 @@ export class OutboxService {
             protocol_id: protocol.id,
             protocol_name: protocol.name,
             step_id: s.id,
+            appointment_id: null,
             step_label: s.label,
             day_offset: s.day_offset,
             template_key: s.template_key,
@@ -140,6 +146,57 @@ export class OutboxService {
       );
     }
     return steps.length;
+  }
+
+  /**
+   * Recordatorios de una cita (en el mismo lote que la guarda). Los que ya
+   * pasaron no se programan; se devuelven para avisar.
+   */
+  planAppointment(
+    batch: FirebaseFirestore.WriteBatch,
+    org: Organization,
+    appt: Pick<Appointment, 'id' | 'patient_id' | 'patient_name' | 'date' | 'time' | 'reminders'>,
+    phone: string,
+    labels: Map<string, string>,
+    createdBy: string,
+    now = new Date(),
+  ): { scheduled: number; past: string[] } {
+    let scheduled = 0;
+    const past: string[] = [];
+    for (const r of appt.reminders) {
+      const { at, shifted } = reminderSendAt(appt, r.timing, org);
+      const when = reminderLabel(r.timing);
+      if (at.getTime() < now.getTime() - PAST_GRACE_MS) {
+        past.push(when);
+        continue;
+      }
+      batch.set(
+        this.col(org.id).doc(),
+        this.newDoc(
+          {
+            enrollment_id: null,
+            patient_id: appt.patient_id,
+            patient_name: appt.patient_name,
+            phone,
+            protocol_id: null,
+            protocol_name: null,
+            step_id: r.id,
+            appointment_id: appt.id,
+            step_label: `${labels.get(r.template_key) ?? r.template_key} · ${when}`,
+            day_offset: null,
+            template_key: r.template_key,
+            at,
+            shifted,
+            manual: true,
+            created_by: createdBy,
+          },
+          org.timezone,
+          now,
+        ),
+      );
+      scheduled++;
+    }
+    return { scheduled, past };
   }
 
   async addManual(orgId: string, timeZone: string, item: NewOutboxItem): Promise<OutboxItem> {
@@ -212,8 +269,8 @@ export class OutboxService {
     return this.get(orgId, id);
   }
 
-  /** Cancela lo pendiente de una inscripción o de un paciente. */
-  async cancelPending(orgId: string, field: 'enrollment_id' | 'patient_id', value: string, reason: string) {
+  /** Cancela lo pendiente de una inscripción, una cita o un paciente. */
+  async cancelPending(orgId: string, field: 'enrollment_id' | 'appointment_id' | 'patient_id', value: string, reason: string) {
     const snap = await this.col(orgId).where(field, '==', value).get();
     const batch = this.firebase.db.batch();
     let n = 0;

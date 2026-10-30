@@ -13,7 +13,7 @@ import {
   Title,
   UnstyledButton,
 } from '@mantine/core';
-import { IconChevronLeft, IconChevronRight } from '@tabler/icons-react';
+import { IconCalendarPlus, IconChevronLeft, IconChevronRight } from '@tabler/icons-react';
 import { useNavigate } from 'react-router-dom';
 import { OUTBOX_STATUS_LABELS, addDays, weekday, zonedTime, type OutboxItem } from '@genon/shared';
 import { useOrgId } from '../../auth/guards';
@@ -22,8 +22,7 @@ import { useOutbox } from '../../services/patients';
 import { OutboxBadges } from '../../features/patients/OutboxBadges';
 import { OutboxActions } from '../../features/patients/OutboxActions';
 import { fmtDay, fmtTime, todayIn } from '../../lib/format';
-
-const mondayOf = (ymd: string) => addDays(ymd, -((weekday(ymd) + 6) % 7));
+import { NewAppointmentModal, mondayOf } from './AppointmentsPage';
 
 const statusOptions = [
   { value: 'all', label: 'Todos los estados' },
@@ -52,6 +51,7 @@ export function SchedulePage() {
   const [monday, setMonday] = useState(() => mondayOf(today));
   const [status, setStatus] = useState('all');
   const [protocol, setProtocol] = useState<string | null>(null);
+  const [scheduling, setScheduling] = useState(false);
 
   const days = Array.from({ length: 7 }, (_, i) => addDays(monday, i));
   const from = zonedTime(monday, '00:00', tz).toISOString();
@@ -60,7 +60,7 @@ export function SchedulePage() {
 
   const protocolOptions = useMemo(() => {
     const names = new Map<string, string>();
-    for (const i of items) names.set(i.protocol_id ?? 'manual', i.protocol_name ?? 'Envíos manuales');
+    for (const i of items) names.set(i.protocol_id ?? 'manual', i.protocol_name ?? 'Citas y envíos manuales');
     return [...names].map(([value, label]) => ({ value, label }));
   }, [items]);
 
@@ -94,6 +94,9 @@ export function SchedulePage() {
           <ActionIcon variant="default" size="lg" onClick={() => setMonday(addDays(monday, 7))}>
             <IconChevronRight size={18} />
           </ActionIcon>
+          <Button leftSection={<IconCalendarPlus size={16} />} onClick={() => setScheduling(true)}>
+            Programar recordatorio
+          </Button>
         </Group>
       </Group>
 
@@ -163,7 +166,7 @@ export function SchedulePage() {
                         </Text>
                         <Text size="xs" c="dimmed" lineClamp={2}>
                           {i.step_label}
-                          {i.protocol_name ? ` · ${i.protocol_name}` : ' · manual'}
+                          {i.protocol_name ? ` · ${i.protocol_name}` : i.appointment_id ? ' · cita' : ' · manual'}
                         </Text>
                       </UnstyledButton>
                       <OutboxActions orgId={orgId} item={i} onOpenPatient={() => navigate(`/org/${orgId}/patients?p=${i.patient_id}`)} />
@@ -176,6 +179,8 @@ export function SchedulePage() {
           );
         })}
       </SimpleGrid>
+
+      <NewAppointmentModal orgId={orgId} editing={scheduling ? 'new' : null} onClose={() => setScheduling(false)} />
     </Stack>
   );
 }

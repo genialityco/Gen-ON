@@ -47,6 +47,11 @@ export const COL = {
   patients: 'patients',
   enrollments: 'enrollments',
   outbox: 'outbox',
+  appointments: 'appointments',
+  // Ficha clínica: fuera de patients para que las reglas la excluyan aparte
+  clinicalRecords: 'clinical_records',
+  clinicalNotes: 'clinical_notes',
+  clinicalAccess: 'clinical_access',
   usageMonthly: 'usage_monthly',
   // Biblioteca global de Gen.iality
   libraryTemplates: 'library_templates',

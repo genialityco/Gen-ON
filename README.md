@@ -41,12 +41,16 @@ organizations/{orgId}                  datos, plan, estado, zona horaria, hora d
   protocols/{id}                       pasos: día relativo (-2, 0, +7…), hora y plantilla
   patients/{id}                        datos y autorización (texto exacto, versión, quién y cuándo), baja
   enrollments/{id}                     paciente + protocolo + fecha del procedimiento o cita
+  appointments/{id}                    citas agendadas a mano con sus recordatorios (sin protocolo)
   outbox/{id}                          la parrilla: un documento por envío (queue_at solo mientras está programado)
   messages/{wamid}                     enviados y recibidos, con su historial de estados
   wa_contacts/{wa_id}                  último mensaje del paciente (ventana de 24 h)
   stats_daily/{YYYY-MM-DD}             contadores por día (sent, delivered, read, failed, inbound, billable)
-  usage_monthly/{YYYY-MM}              pacientes nuevos del mes (base del cobro)
+  usage_monthly/{YYYY-MM}              pacientes nuevos del mes (base del cobro) y mensajes enviados (messages_sent)
   webhook_events/{id}                  eventos crudos de Meta
+  clinical_records/{patientId}         ficha clínica: antecedentes (versiones anteriores en history/)
+  clinical_notes/{id}                  notas de la ficha: no se editan ni se borran (aclaraciones con amends)
+  clinical_access/{id}                 quién consultó o modificó cada ficha y cuándo
 library_templates/{id}                 biblioteca global de Gen.iality
 library_protocols/{id}
 org_secrets/{orgId}                    token, clave de la app, verify token y PIN, cifrados (solo la API)
@@ -65,11 +69,20 @@ Ninguna consulta necesita índices compuestos.
 3. **Paciente**: se registra con su autorización de datos y se inscribe a un protocolo. La
    inscripción arma su parrilla; los pasos cuya hora ya pasó quedan omitidos. Si a un mensaje le
    faltaría un dato ({{hora}}, {{profesional}}), la inscripción se rechaza.
-4. **Despachador** (`DISPATCH_ENABLED=true`, cada minuto, solo organizaciones activas): toma cada
+4. **Citas** (Citas o Parrilla → Programar recordatorio): fecha, hora, motivo y profesional, con hasta
+   5 recordatorios (N días antes a una hora, o N horas antes). Reprogramar cancela lo pendiente y lo
+   vuelve a programar; cancelar la cita o marcarla asistió/no asistió cancela lo que no ha salido.
+   Los recordatorios que ya pasaron no se programan. Un envío manual suelto toma los datos de la
+   última inscripción activa o, si no hay, de la próxima cita.
+5. **Despachador** (`DISPATCH_ENABLED=true`, cada minuto, solo organizaciones activas): toma cada
    envío con una transacción, lo envía con la versión aprobada y deja el resultado. Límites de Meta
    y fallas temporales se reintentan (1, 4, 9, 16 min); un envío atrasado más de 12 h se omite; uno
    interrumpido a mitad queda fallido para revisar (pudo haber salido).
-5. **Webhook**: estados de entrega a la parrilla, el botón que tocó el paciente (payload
+   **Límite mensual** (`monthly_message_limit` de la organización, lo fija el superadmin; vacío =
+   sin límite): cuenta los mensajes enviados a pacientes en el mes de la clínica; al llegar al
+   límite, el resto del mes queda omitido con el motivo y se puede reenviar si se sube el límite. La
+   clínica ve el uso en Inicio y recibe aviso desde el 80 %. El mensaje de prueba del asistente no cuenta.
+6. **Webhook**: estados de entrega a la parrilla, el botón que tocó el paciente (payload
    `o:<envío>:<botón>`) y la aprobación de plantillas.
 
 ## Cuentas y accesos
@@ -79,13 +92,19 @@ Ninguna consulta necesita índices compuestos.
   no tienen rol global.
 - **Accesos por organización** (`organizations/{org}/members/{uid}` y `users/{uid}.memberships`):
   una persona puede estar en varias organizaciones con un rol distinto en cada una (`org_admin`,
-  `operator`, o `staff` para el equipo Gen.iality). No van en el token, así que quitar un acceso
+  `clinician` (profesional de salud), `operator`, o `staff` para el equipo Gen.iality). No van en el token, así que quitar un acceso
   aplica de inmediato (máx. 30 s de caché por instancia).
-- Jerarquía dentro de una organización: operador < administrador < equipo Gen.iality < superadmin.
+- Jerarquía dentro de una organización: operador = profesional de salud < administrador < equipo
+  Gen.iality < superadmin.
   En la API, `@OrgAccess('org_admin')` exige ese rol mínimo en la organización de la ruta.
 - **Usuarios** (`/admin/users`, solo superadmin): crear cuentas, tipo de cuenta, accesos, contraseña
   y desactivar. Cambiar el tipo o desactivar cierra las sesiones abiertas.
-- La clínica gestiona su propio equipo (administradores y operadores); el equipo Gen.iality
+- **Ficha clínica** (`@Clinical`): la leen y escriben el profesional de salud y el administrador de
+  la clínica; el superadmin solo la lee (soporte). El equipo Gen.iality y los operadores no la ven.
+  Cada consulta queda en `clinical_access` (el administrador ve el registro), y las reglas de
+  Firestore la bloquean desde el navegador. Complementa la historia clínica legal, que sigue en el
+  software de la clínica.
+- La clínica gestiona su propio equipo (administradores, profesionales y operadores); el equipo Gen.iality
   asignado solo se gestiona desde Usuarios.
 
 ## Webhook por organización
@@ -111,3 +130,5 @@ veces y un estado nunca retrocede.
 ## Pruebas
 
 `npm test` (API).
+
+Revisión de la app de Meta (videos de proveedor de tecnología): [docs/revision-meta.md](docs/revision-meta.md).

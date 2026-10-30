@@ -10,6 +10,8 @@ import { MetaApiError, MetaGraphClient } from '../meta/graph.client';
 import { MetaConnectionStore } from '../meta/meta-connection.store';
 import { EnrollmentsService } from './enrollments.service';
 import { variableValues } from './variables';
+import { AppointmentsService, appointmentContext } from './appointments.service';
+import { UsageService } from './usage.service';
 
 const BATCH = 50;
 const LEASE_MS = 3 * 60_000;
@@ -33,6 +35,9 @@ interface OrgContext {
   phoneId: string | null;
   token: string | null;
   templates: Map<string, Template | null>;
+  /** Mes en curso (hora de la clínica) y mensajes ya enviados en él */
+  month: string;
+  sent: number;
 }
 
 type Outcome = { status: 'sent'; wamid: string } | { status: 'failed' | 'cancelled' | 'skipped'; reason: string } | { status: 'retry'; reason: string };
@@ -56,14 +61,29 @@ export class DispatcherService implements OnModuleInit {
     private readonly store: MetaConnectionStore,
     private readonly graph: MetaGraphClient,
     private readonly enrollments: EnrollmentsService,
+    private readonly appointments: AppointmentsService,
+    private readonly usage: UsageService,
   ) {}
 
   get enabled() {
     return process.env.DISPATCH_ENABLED === 'true';
   }
 
+  /** DISPATCH_ORG_IDS (separados por coma) limita el envío a esas organizaciones, p. ej. la de demo en local. */
+  get onlyOrgs(): Set<string> | null {
+    const ids = (process.env.DISPATCH_ORG_IDS ?? '').split(',').map((s) => s.trim()).filter(Boolean);
+    return ids.length ? new Set(ids) : null;
+  }
+
   onModuleInit() {
-    this.logger.log(this.enabled ? 'Despachador encendido (cada minuto)' : 'Despachador apagado (falta DISPATCH_ENABLED=true)');
+    const only = this.onlyOrgs;
+    this.logger.log(
+      !this.enabled
+        ? 'Despachador apagado (falta DISPATCH_ENABLED=true)'
+        : only
+          ? `Despachador encendido (cada minuto) solo para: ${[...only].join(', ')}`
+          : 'Despachador encendido (cada minuto)',
+    );
   }
 
   @Cron(CronExpression.EVERY_MINUTE)
@@ -72,7 +92,9 @@ export class DispatcherService implements OnModuleInit {
     this.running = true;
     try {
       const active = await this.firebase.db.collection(COL.organizations).where('status', '==', 'active').select().get();
+      const only = this.onlyOrgs;
       for (const doc of active.docs) {
+        if (only && !only.has(doc.id)) continue;
         try {
           await this.dispatchOrg(doc.id, new Date());
         } catch (e) {
@@ -101,8 +123,12 @@ export class DispatcherService implements OnModuleInit {
     for (const doc of due.docs) {
       const item = await this.claim(doc.ref, now);
       if (!item) continue;
-      ctx ??= await this.loadContext(orgId);
+      ctx ??= await this.loadContext(orgId, now);
       const outcome = await this.send(ctx, doc.id, item, now);
+      if (outcome.status === 'sent') {
+        ctx.sent++;
+        await this.usage.countMessage(orgId, ctx.month);
+      }
       await this.finish(orgId, doc.ref, item, outcome, now);
     }
   }
@@ -123,17 +149,20 @@ export class DispatcherService implements OnModuleInit {
     });
   }
 
-  private async loadContext(orgId: string): Promise<OrgContext> {
+  private async loadContext(orgId: string, now: Date): Promise<OrgContext> {
     const [org, conn, secrets] = await Promise.all([
       this.orgs.get(orgId),
       this.store.raw(orgId),
       this.store.getSecrets(orgId),
     ]);
+    const month = this.usage.monthOf(now, org.timezone);
     return {
       org,
       phoneId: conn.phone_number_id ?? null,
       token: secrets.access_token ?? null,
       templates: new Map(),
+      month,
+      sent: await this.usage.messagesSent(orgId, month),
     };
   }
 
@@ -147,11 +176,15 @@ export class DispatcherService implements OnModuleInit {
     if (patient.opted_out) return { status: 'cancelled', reason: 'El paciente se dio de baja' };
 
     let enrollment = null;
-    if (item.enrollment_id) {
+    if (item.appointment_id) {
+      const appt = (await orgRef.collection(COL.appointments).doc(item.appointment_id).get()).data();
+      if (!appt || appt.status !== 'scheduled') return { status: 'cancelled', reason: 'La cita ya no está agendada' };
+      enrollment = appointmentContext(appt as any);
+    } else if (item.enrollment_id) {
       enrollment = (await orgRef.collection(COL.enrollments).doc(item.enrollment_id).get()).data() ?? null;
       if (!enrollment || enrollment.status !== 'active') return { status: 'cancelled', reason: 'Inscripción cancelada' };
     } else {
-      enrollment = await this.enrollments.latestActive(ctx.org.id, item.patient_id);
+      enrollment = await this.appointments.manualContext(ctx.org.id, ctx.org.timezone, item.patient_id);
     }
 
     if (!ctx.templates.has(item.template_key)) {
@@ -162,6 +195,11 @@ export class DispatcherService implements OnModuleInit {
     const approved = template.approved;
     if (!approved) return { status: 'failed', reason: 'La plantilla no tiene una versión aprobada en Meta' };
     if (!ctx.phoneId || !ctx.token) return { status: 'failed', reason: 'WhatsApp no está conectado' };
+    // Límite mensual: lo que pase de ahí queda omitido (la clínica puede reenviarlo si se sube el límite)
+    const limit = ctx.org.monthly_message_limit;
+    if (limit !== null && ctx.sent >= limit) {
+      return { status: 'skipped', reason: `Se alcanzó el límite de ${limit} mensajes del mes` };
+    }
 
     let components: any[];
     try {
@@ -222,6 +260,7 @@ export class DispatcherService implements OnModuleInit {
             outbox_id: ref.id,
             patient_id: item.patient_id,
             enrollment_id: item.enrollment_id ?? null,
+            appointment_id: item.appointment_id ?? null,
             to: item.phone,
             type: 'template',
             template_key: item.template_key,

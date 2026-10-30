@@ -9,6 +9,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@mantine/charts": "^7.17.8",
     "@mantine/core": "^7.17.0",
     "@mantine/dates": "^7.17.8",
     "@mantine/form": "^7.17.0",
@@ -22,7 +23,8 @@
     "firebase": "^11.4.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
-    "react-router-dom": "^7.1.5"
+    "react-router-dom": "^7.1.5",
+    "recharts": "^2.15.3"
   },
   "devDependencies": {
     "@types/react": "^19.0.8",

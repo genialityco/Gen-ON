@@ -32,3 +32,11 @@ export const CurrentUser = createParamDecorator(
 export const CurrentOrgRole = createParamDecorator(
   (_: unknown, ctx: ExecutionContext): Role => ctx.switchToHttp().getRequest().orgRole,
 );
+
+export const CLINICAL_KEY = 'clinical';
+/**
+ * Ficha clínica: además de @OrgAccess, exige ser del equipo de salud
+ * (canReadClinical / canWriteClinical). El equipo Gen.iality queda fuera
+ * aunque su rango sea mayor.
+ */
+export const Clinical = (mode: 'read' | 'write') => SetMetadata(CLINICAL_KEY, mode);

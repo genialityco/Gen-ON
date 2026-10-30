@@ -1,5 +1,5 @@
 import { BadRequestException, Body, Controller, Get, Param, Patch, Post, Put, Query } from '@nestjs/common';
-import { extractVariables, patientFullName } from '@genon/shared';
+import { extractVariables, patientFullName, type PatientListItem } from '@genon/shared';
 import { missingVariables, variableValues } from './variables';
 import { AuthUser, CurrentUser, OrgAccess } from '../auth/decorators';
 import { OrganizationsService } from '../organizations/organizations.service';
@@ -7,10 +7,20 @@ import { TemplatesService } from '../templates/templates.service';
 import { PatientsService } from './patients.service';
 import { EnrollmentsService } from './enrollments.service';
 import { OutboxService } from './outbox.service';
+import { AppointmentsService } from './appointments.service';
 import { UsageService } from './usage.service';
-import { CreatePatientDto, EnrollmentDto, ManualSendDto, OptOutDto, PatientDto, RescheduleDto } from './dto';
+import {
+  AppointmentDto,
+  AppointmentStatusDto,
+  CreateAppointmentDto,
+  CreatePatientDto,
+  EnrollmentDto,   ManualSendDto,
+  OptOutDto,
+  PatientDto,
+  RescheduleDto,
+} from './dto';
 
-/** Pacientes, inscripciones y parrilla: todo el equipo de la clínica. */
+/** Pacientes, inscripciones, citas y parrilla: todo el equipo de la clínica. */
 @OrgAccess('operator')
 @Controller('organizations/:orgId')
 export class PatientsController {
@@ -19,13 +29,18 @@ export class PatientsController {
     private readonly patients: PatientsService,
     private readonly enrollments: EnrollmentsService,
     private readonly outbox: OutboxService,
+    private readonly appointments: AppointmentsService,
     private readonly usage: UsageService,
     private readonly templates: TemplatesService,
   ) {}
 
   @Get('patients')
-  list(@Param('orgId') orgId: string, @CurrentUser() user: AuthUser) {
-    return this.patients.list(orgId);
+  async list(@Param('orgId') orgId: string, @CurrentUser() user: AuthUser): Promise<PatientListItem[]> {
+    const [patients, protocols] = await Promise.all([
+      this.patients.list(orgId),
+      this.enrollments.activeProtocolsByPatient(orgId),
+    ]);
+    return patients.map((p) => ({ ...p, active_protocols: protocols.get(p.id) ?? [] }));
   }
 
   /** Crea el paciente y, si viene, lo inscribe de una vez. */
@@ -44,12 +59,13 @@ export class PatientsController {
 
   @Get('patients/:id')
   async detail(@Param('orgId') orgId: string, @Param('id') id: string, @CurrentUser() user: AuthUser) {
-    const [patient, enrollments, outbox] = await Promise.all([
+    const [patient, enrollments, appointments, outbox] = await Promise.all([
       this.patients.get(orgId, id),
       this.enrollments.listForPatient(orgId, id),
+      this.appointments.listForPatient(orgId, id),
       this.outbox.listForPatient(orgId, id),
     ]);
-    return { patient, enrollments, outbox };
+    return { patient, enrollments, appointments, outbox };
   }
 
   @Put('patients/:id')
@@ -70,6 +86,38 @@ export class PatientsController {
   @Post('enrollments/:id/cancel')
   cancelEnrollment(@Param('orgId') orgId: string, @Param('id') id: string, @CurrentUser() user: AuthUser) {
     return this.enrollments.cancel(orgId, id);
+  }
+
+  // ---- Citas con recordatorios ----
+
+  @Get('appointments')
+  listAppointments(@Param('orgId') orgId: string, @Query('from') from: string, @Query('to') to: string, @CurrentUser() user: AuthUser) {
+    return this.appointments.list(orgId, from, to);
+  }
+
+  @Post('appointments')
+  createAppointment(@Param('orgId') orgId: string, @Body() body: CreateAppointmentDto, @CurrentUser() user: AuthUser) {
+    return this.appointments.create(orgId, body, user);
+  }
+
+  @Put('appointments/:id')
+  updateAppointment(
+    @Param('orgId') orgId: string,
+    @Param('id') id: string,
+    @Body() body: AppointmentDto,
+    @CurrentUser() user: AuthUser,
+  ) {
+    return this.appointments.update(orgId, id, body, user);
+  }
+
+  @Post('appointments/:id/status')
+  appointmentStatus(
+    @Param('orgId') orgId: string,
+    @Param('id') id: string,
+    @Body() body: AppointmentStatusDto,
+    @CurrentUser() user: AuthUser,
+  ) {
+    return this.appointments.setStatus(orgId, id, body.status);
   }
 
   // ---- Parrilla ----
@@ -95,14 +143,14 @@ export class PatientsController {
     if (patient.opted_out) throw new BadRequestException('El paciente se dio de baja');
     if (!patient.consent) throw new BadRequestException('El paciente no tiene autorización de datos');
     if (!template) throw new BadRequestException('Plantilla no encontrada');
-    // Los datos de la cita salen de su última inscripción activa
-    const enrollment = await this.enrollments.latestActive(orgId, patient.id);
+    // Los datos de la cita salen de su última inscripción activa o de su próxima cita
+    const enrollment = await this.appointments.manualContext(orgId, org.timezone, patient.id);
     const missing = missingVariables(
       extractVariables(template.approved?.body ?? template.body),
       variableValues({ org, patient, enrollment }),
     );
     if (missing.length) {
-      throw new BadRequestException(`Esta plantilla necesita ${missing.join(', ')}: inscribe al paciente a un protocolo.`);
+      throw new BadRequestException(`Esta plantilla necesita ${missing.join(', ')}: inscribe al paciente a un protocolo o agenda una cita con recordatorios.`);
     }
     const at = body.send_at ? new Date(body.send_at) : new Date();
     if (at.getTime() < Date.now() - 60_000) throw new BadRequestException('La fecha ya pasó');
@@ -114,6 +162,7 @@ export class PatientsController {
       protocol_id: null,
       protocol_name: null,
       step_id: null,
+      appointment_id: null,
       step_label: template.label,
       day_offset: null,
       template_key: template.key,

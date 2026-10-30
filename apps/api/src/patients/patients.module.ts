@@ -6,13 +6,14 @@ import { PatientsService } from './patients.service';
 import { EnrollmentsService } from './enrollments.service';
 import { OutboxService } from './outbox.service';
 import { UsageService } from './usage.service';
+import { AppointmentsService } from './appointments.service';
 import { DispatcherService } from './dispatcher.service';
 import { PatientsController } from './patients.controller';
 
 @Module({
   imports: [OrganizationsModule, TemplatesModule, MetaModule],
   controllers: [PatientsController],
-  providers: [PatientsService, EnrollmentsService, OutboxService, UsageService, DispatcherService],
+  providers: [PatientsService, EnrollmentsService, AppointmentsService, OutboxService, UsageService, DispatcherService],
   exports: [PatientsService, OutboxService],
 })
 export class PatientsModule {}

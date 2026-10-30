@@ -7,11 +7,13 @@ import {
   Collapse,
   Group,
   Loader,
+  Modal,
   Paper,
   Select,
   SimpleGrid,
   Spoiler,
   Stack,
+  Tabs,
   Text,
   TextInput,
   Textarea,
@@ -22,11 +24,22 @@ import { DateTimePicker } from '@mantine/dates';
 import { useForm } from '@mantine/form';
 import { modals } from '@mantine/modals';
 import { notifications } from '@mantine/notifications';
-import { IconBan, IconPencil, IconPlus, IconSend } from '@tabler/icons-react';
+import {
+  IconBan,
+  IconCalendarTime,
+  IconListDetails,
+  IconMessage2,
+  IconPencil,
+  IconPlus,
+  IconSend,
+  IconStethoscope,
+} from '@tabler/icons-react';
 import {
   CONSENT_METHOD_LABELS,
   ENROLLMENT_STATUS_LABELS,
+  canReadClinical,
   dayOffsetLabel,
+  type Appointment,
   type Organization,
   type Patient,
   type PatientInput,
@@ -47,6 +60,10 @@ import { EnrollmentFields, emptyEnrollment, toEnrollmentInput } from './Enrollme
 import { OutboxActions } from './OutboxActions';
 import { OutboxBadges, OUTBOX_COLORS } from './OutboxBadges';
 import { patientValidators } from './NewPatientForm';
+import { useOrgRole } from '../../auth/AuthProvider';
+import { AppointmentCard } from '../appointments/AppointmentCard';
+import { AppointmentForm } from '../appointments/AppointmentForm';
+import { ClinicalRecordPanel } from '../clinical/ClinicalRecordPanel';
 
 interface Props {
   org: Organization;
@@ -60,11 +77,14 @@ export function PatientDrawer({ org, patientId, protocols, templates }: Props) {
   const [editing, setEditing] = useState(false);
   const [enrolling, setEnrolling] = useState(false);
   const [sending, setSending] = useState(false);
+  const [tab, setTab] = useState('appointments');
+  const [appointment, setAppointment] = useState<Appointment | 'new' | null>(null);
+  const role = useOrgRole(org.id);
   const cancelEnrollment = useCancelEnrollment(org.id);
   const optOut = useOptOut(org.id, patientId);
 
   if (isLoading || !data) return <Loader />;
-  const { patient, enrollments, outbox } = data;
+  const { patient, enrollments, appointments, outbox } = data;
   const tz = org.timezone;
 
   const confirmOptOut = () =>
@@ -131,111 +151,180 @@ export function PatientDrawer({ org, patientId, protocols, templates }: Props) {
         </Paper>
       )}
 
-      <Group justify="space-between">
-        <Text fw={600}>Protocolos</Text>
-        {!patient.opted_out && (
-          <Button size="xs" variant="light" leftSection={<IconPlus size={14} />} onClick={() => setEnrolling((v) => !v)}>
-            Inscribir
-          </Button>
-        )}
-      </Group>
-      <Collapse in={enrolling}>
-        <EnrollForm orgId={org.id} patientId={patient.id} protocols={protocols} onDone={() => setEnrolling(false)} />
-      </Collapse>
-      {!enrollments.length && (
-        <Text size="sm" c="dimmed">
-          Sin inscripciones.
-        </Text>
-      )}
-      {enrollments.map((e) => (
-        <Card key={e.id} withBorder padding="sm">
-          <Group justify="space-between" wrap="nowrap">
-            <div>
-              <Text size="sm" fw={500}>
-                {e.protocol_name}
+      <Tabs value={tab} onChange={(v) => setTab(v ?? 'appointments')} keepMounted={false}>
+        <Tabs.List>
+          <Tabs.Tab value="appointments" leftSection={<IconCalendarTime size={14} />}>
+            Citas
+          </Tabs.Tab>
+          <Tabs.Tab value="protocols" leftSection={<IconListDetails size={14} />}>
+            Protocolos
+          </Tabs.Tab>
+          <Tabs.Tab value="messages" leftSection={<IconMessage2 size={14} />}>
+            Mensajes
+          </Tabs.Tab>
+          {canReadClinical(role) && (
+            <Tabs.Tab value="clinical" leftSection={<IconStethoscope size={14} />}>
+              Ficha clínica
+            </Tabs.Tab>
+          )}
+        </Tabs.List>
+
+        <Tabs.Panel value="appointments" pt="sm">
+          <Stack>
+            <Group justify="space-between">
+              <Text fw={600}>Citas</Text>
+              <Button size="xs" variant="light" leftSection={<IconPlus size={14} />} onClick={() => setAppointment('new')}>
+                Agendar cita
+              </Button>
+            </Group>
+            {!appointments.length && (
+              <Text size="sm" c="dimmed">
+                Sin citas. Agenda una para programar sus recordatorios por WhatsApp.
               </Text>
-              <Text size="xs" c="dimmed">
-                {fmtDay(e.reference_date, { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}
-                {e.reference_time && ` · ${e.reference_time}`}
-                {e.procedure && ` · ${e.procedure}`}
-                {e.professional && ` · ${e.professional}`}
-              </Text>
-            </div>
-            <Group gap="xs" wrap="nowrap">
-              <Badge variant="light" color={e.status === 'active' ? 'teal' : 'gray'}>
-                {ENROLLMENT_STATUS_LABELS[e.status]}
-              </Badge>
-              {e.status === 'active' && (
-                <Button
-                  size="compact-xs"
-                  variant="subtle"
-                  color="red"
-                  onClick={() =>
-                    modals.openConfirmModal({
-                      title: 'Cancelar inscripción',
-                      children: <Text size="sm">Se cancelan los envíos pendientes de este protocolo.</Text>,
-                      labels: { confirm: 'Cancelar inscripción', cancel: 'Volver' },
-                      confirmProps: { color: 'red' },
-                      onConfirm: () => cancelEnrollment.mutate(e.id, { onError: notifyError }),
-                    })
-                  }
-                >
-                  Cancelar
+            )}
+            {appointments.map((a) => (
+              <AppointmentCard key={a.id} orgId={org.id} appointment={a} onEdit={() => setAppointment(a)} />
+            ))}
+          </Stack>
+        </Tabs.Panel>
+
+        <Tabs.Panel value="protocols" pt="sm">
+          <Stack>
+            <Group justify="space-between">
+              <Text fw={600}>Protocolos</Text>
+              {!patient.opted_out && (
+                <Button size="xs" variant="light" leftSection={<IconPlus size={14} />} onClick={() => setEnrolling((v) => !v)}>
+                  Inscribir
                 </Button>
               )}
             </Group>
-          </Group>
-        </Card>
-      ))}
+            <Collapse in={enrolling}>
+              <EnrollForm orgId={org.id} patientId={patient.id} protocols={protocols} onDone={() => setEnrolling(false)} />
+            </Collapse>
+            {!enrollments.length && (
+              <Text size="sm" c="dimmed">
+                Sin inscripciones.
+              </Text>
+            )}
+            {enrollments.map((e) => (
+              <Card key={e.id} withBorder padding="sm">
+                <Group justify="space-between" wrap="nowrap">
+                  <div>
+                    <Text size="sm" fw={500}>
+                      {e.protocol_name}
+                    </Text>
+                    <Text size="xs" c="dimmed">
+                      {fmtDay(e.reference_date, { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}
+                      {e.reference_time && ` · ${e.reference_time}`}
+                      {e.procedure && ` · ${e.procedure}`}
+                      {e.professional && ` · ${e.professional}`}
+                    </Text>
+                  </div>
+                  <Group gap="xs" wrap="nowrap">
+                    <Badge variant="light" color={e.status === 'active' ? 'teal' : 'gray'}>
+                      {ENROLLMENT_STATUS_LABELS[e.status]}
+                    </Badge>
+                    {e.status === 'active' && (
+                      <Button
+                        size="compact-xs"
+                        variant="subtle"
+                        color="red"
+                        onClick={() =>
+                          modals.openConfirmModal({
+                            title: 'Cancelar inscripción',
+                            children: <Text size="sm">Se cancelan los envíos pendientes de este protocolo.</Text>,
+                            labels: { confirm: 'Cancelar inscripción', cancel: 'Volver' },
+                            confirmProps: { color: 'red' },
+                            onConfirm: () => cancelEnrollment.mutate(e.id, { onError: notifyError }),
+                          })
+                        }
+                      >
+                        Cancelar
+                      </Button>
+                    )}
+                  </Group>
+                </Group>
+              </Card>
+            ))}
+          </Stack>
+        </Tabs.Panel>
 
-      <Group justify="space-between" mt="sm">
-        <Text fw={600}>Mensajes</Text>
-        {!patient.opted_out && (
-          <Button size="xs" variant="light" leftSection={<IconSend size={14} />} onClick={() => setSending((v) => !v)}>
-            Enviar plantilla
-          </Button>
+        <Tabs.Panel value="messages" pt="sm">
+          <Stack>
+            <Group justify="space-between">
+              <Text fw={600}>Mensajes</Text>
+              {!patient.opted_out && (
+                <Button size="xs" variant="light" leftSection={<IconSend size={14} />} onClick={() => setSending((v) => !v)}>
+                  Enviar plantilla
+                </Button>
+              )}
+            </Group>
+            <Collapse in={sending}>
+              <ManualSend orgId={org.id} patientId={patient.id} templates={templates} onDone={() => setSending(false)} />
+            </Collapse>
+            {!outbox.length ? (
+              <Text size="sm" c="dimmed">
+                Sin mensajes.
+              </Text>
+            ) : (
+              <Timeline bulletSize={12} lineWidth={2}>
+                {outbox.map((o) => (
+                  <Timeline.Item key={o.id} color={OUTBOX_COLORS[o.status]}>
+                    <Group justify="space-between" wrap="nowrap" align="start">
+                      <div>
+                        <Text size="sm" fw={500}>
+                          {o.step_label}
+                          {o.day_offset !== null && (
+                            <Text span size="xs" c="dimmed">
+                              {' '}
+                              · {dayOffsetLabel(o.day_offset)}
+                            </Text>
+                          )}
+                          {o.manual && (
+                            <Text span size="xs" c="dimmed">
+                              {' '}
+                              · {o.appointment_id ? 'cita' : 'manual'}
+                            </Text>
+                          )}
+                        </Text>
+                        <Text size="xs" c="dimmed">
+                          {fmtDateTime(o.sent_at ?? o.send_at, tz)}
+                          {o.protocol_name && ` · ${o.protocol_name}`}
+                        </Text>
+                        <OutboxBadges item={o} />
+                      </div>
+                      <OutboxActions orgId={org.id} item={o} />
+                    </Group>
+                  </Timeline.Item>
+                ))}
+              </Timeline>
+            )}
+          </Stack>
+        </Tabs.Panel>
+
+        {canReadClinical(role) && (
+          <Tabs.Panel value="clinical" pt="sm">
+            <ClinicalRecordPanel orgId={org.id} patientId={patient.id} timezone={tz} role={role!} />
+          </Tabs.Panel>
         )}
-      </Group>
-      <Collapse in={sending}>
-        <ManualSend orgId={org.id} patientId={patient.id} templates={templates} onDone={() => setSending(false)} />
-      </Collapse>
-      {!outbox.length ? (
-        <Text size="sm" c="dimmed">
-          Sin mensajes.
-        </Text>
-      ) : (
-        <Timeline bulletSize={12} lineWidth={2}>
-          {outbox.map((o) => (
-            <Timeline.Item key={o.id} color={OUTBOX_COLORS[o.status]}>
-              <Group justify="space-between" wrap="nowrap" align="start">
-                <div>
-                  <Text size="sm" fw={500}>
-                    {o.step_label}
-                    {o.day_offset !== null && (
-                      <Text span size="xs" c="dimmed">
-                        {' '}
-                        · {dayOffsetLabel(o.day_offset)}
-                      </Text>
-                    )}
-                    {o.manual && (
-                      <Text span size="xs" c="dimmed">
-                        {' '}
-                        · manual
-                      </Text>
-                    )}
-                  </Text>
-                  <Text size="xs" c="dimmed">
-                    {fmtDateTime(o.sent_at ?? o.send_at, tz)}
-                    {o.protocol_name && ` · ${o.protocol_name}`}
-                  </Text>
-                  <OutboxBadges item={o} />
-                </div>
-                <OutboxActions orgId={org.id} item={o} />
-              </Group>
-            </Timeline.Item>
-          ))}
-        </Timeline>
-      )}
+      </Tabs>
+
+      <Modal
+        opened={!!appointment}
+        onClose={() => setAppointment(null)}
+        title={appointment === 'new' ? 'Agendar cita' : 'Editar cita'}
+        size="lg"
+      >
+        {appointment && (
+          <AppointmentForm
+            org={org}
+            templates={templates}
+            patientId={patient.id}
+            appointment={appointment === 'new' ? undefined : appointment}
+            onDone={() => setAppointment(null)}
+          />
+        )}
+      </Modal>
     </Stack>
   );
 }

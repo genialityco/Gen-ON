@@ -75,6 +75,7 @@ export function PatientsPage() {
                 <Table.Tr>
                   <Table.Th>Paciente</Table.Th>
                   <Table.Th>Celular</Table.Th>
+                  <Table.Th>Protocolo</Table.Th>
                   <Table.Th>Registrado</Table.Th>
                   <Table.Th />
                 </Table.Tr>
@@ -86,6 +87,21 @@ export function PatientsPage() {
                       {p.first_name} {p.last_name}
                     </Table.Td>
                     <Table.Td>+{p.phone}</Table.Td>
+                    <Table.Td>
+                      {p.active_protocols.length ? (
+                        <Group gap={4}>
+                          {p.active_protocols.map((pr) => (
+                            <Badge key={pr.id} variant="light" size="sm">
+                              {pr.name}
+                            </Badge>
+                          ))}
+                        </Group>
+                      ) : (
+                        <Text size="sm" c="dimmed">
+                          —
+                        </Text>
+                      )}
+                    </Table.Td>
                     <Table.Td>
                       <Text size="sm" c="dimmed">
                         {fmtDateTime(p.created_at, org.timezone)}

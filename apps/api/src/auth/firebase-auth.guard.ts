@@ -7,9 +7,9 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
-import { hasAtLeast, type GlobalRole, type Role } from '@genon/shared';
+import { canReadClinical, canWriteClinical, hasAtLeast, type GlobalRole, type Role } from '@genon/shared';
 import { FirebaseService } from '../firebase/firebase.service';
-import { AuthUser, IS_PUBLIC, ORG_ACCESS_KEY, ROLES_KEY } from './decorators';
+import { AuthUser, CLINICAL_KEY, IS_PUBLIC, ORG_ACCESS_KEY, ROLES_KEY } from './decorators';
 import { MembershipsService } from './memberships.service';
 
 const GLOBAL: GlobalRole[] = ['superadmin', 'staff'];
@@ -75,6 +75,13 @@ export class FirebaseAuthGuard implements CanActivate {
       if (!orgRole) throw new ForbiddenException('No tienes acceso a esta organización');
       if (!hasAtLeast(orgRole, min)) throw new ForbiddenException('No tienes permiso para esta acción');
       req.orgRole = orgRole;
+    }
+
+    const clinical = this.reflector.getAllAndOverride<'read' | 'write'>(CLINICAL_KEY, targets);
+    if (clinical) {
+      const orgRole: Role | undefined = req.orgRole;
+      const ok = clinical === 'write' ? canWriteClinical(orgRole) : canReadClinical(orgRole);
+      if (!ok) throw new ForbiddenException('La ficha clínica es solo para el equipo de salud de la clínica');
     }
     return true;
   }

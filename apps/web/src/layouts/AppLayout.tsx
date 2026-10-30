@@ -4,6 +4,7 @@ import {
   IconBook,
   IconBuildingHospital,
   IconCalendarEvent,
+  IconCalendarTime,
   IconChevronDown,
   IconHome,
   IconListDetails,
@@ -48,6 +49,7 @@ export function AppLayout() {
     ? [
         { to: `/org/${orgId}`, label: 'Inicio', icon: IconHome, exact: true },
         { to: `/org/${orgId}/patients`, label: 'Pacientes', icon: IconUserHeart },
+        { to: `/org/${orgId}/appointments`, label: 'Citas', icon: IconCalendarTime },
         { to: `/org/${orgId}/schedule`, label: 'Parrilla', icon: IconCalendarEvent },
         { to: `/org/${orgId}/protocols`, label: 'Protocolos', icon: IconListDetails },
         { to: `/org/${orgId}/templates`, label: 'Plantillas', icon: IconMessage2 },

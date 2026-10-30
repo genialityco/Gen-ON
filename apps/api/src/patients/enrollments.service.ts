@@ -66,6 +66,23 @@ export class EnrollmentsService {
       .sort((a, b) => b.reference_date.localeCompare(a.reference_date));
   }
 
+  /** Protocolos de las inscripciones activas, por paciente (para la lista de pacientes). */
+  async activeProtocolsByPatient(orgId: string): Promise<Map<string, { id: string; name: string }[]>> {
+    const snap = await this.col(orgId)
+      .where('status', '==', 'active')
+      .select('patient_id', 'protocol_id', 'protocol_name')
+      .get();
+    const out = new Map<string, { id: string; name: string }[]>();
+    for (const d of snap.docs) {
+      const list = out.get(d.get('patient_id')) ?? [];
+      if (!list.some((p) => p.id === d.get('protocol_id'))) {
+        list.push({ id: d.get('protocol_id'), name: d.get('protocol_name') });
+      }
+      out.set(d.get('patient_id'), list);
+    }
+    return out;
+  }
+
   /** Última inscripción activa del paciente (contexto de los envíos manuales). */
   async latestActive(orgId: string, patientId: string) {
     const snap = await this.col(orgId).where('patient_id', '==', patientId).where('status', '==', 'active').get();

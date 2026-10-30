@@ -41,6 +41,8 @@ export class UpdateOrganizationDto implements UpdateOrganizationInput {
   @IsOptional() @IsIn(PLAN_KEYS) plan?: PlanKey;
   @IsOptional() @IsIn(STATUSES) status?: OrgStatus;
   @IsOptional() @IsString() timezone?: string;
+  /** null = sin límite */
+  @IsOptional() @IsInt() @Min(0) @Max(1_000_000) monthly_message_limit?: number | null;
 }
 
 export class OrganizationSettingsDto implements OrganizationSettingsInput {

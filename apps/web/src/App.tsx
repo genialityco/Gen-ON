@@ -17,6 +17,7 @@ import { UsersPage } from './pages/admin/UsersPage';
 import { ClinicHomePage } from './pages/clinic/ClinicHomePage';
 import { PatientsPage } from './pages/clinic/PatientsPage';
 import { SchedulePage } from './pages/clinic/SchedulePage';
+import { AppointmentsPage } from './pages/clinic/AppointmentsPage';
 import { ProtocolsPage } from './pages/clinic/ProtocolsPage';
 import { TemplatesPage } from './pages/clinic/TemplatesPage';
 import { TeamPage } from './pages/clinic/TeamPage';
@@ -51,6 +52,7 @@ export function App() {
                       <Route path="org/:orgId" element={<RequireOrg />}>
                         <Route index element={<ClinicHomePage />} />
                         <Route path="patients" element={<PatientsPage />} />
+                        <Route path="appointments" element={<AppointmentsPage />} />
                         <Route path="schedule" element={<SchedulePage />} />
                         <Route path="protocols" element={<ProtocolsPage />} />
                         <Route path="templates" element={<TemplatesPage />} />

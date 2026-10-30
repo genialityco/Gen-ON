@@ -1,8 +1,11 @@
 import { Type } from 'class-transformer';
 import {
+  ArrayMaxSize,
+  IsArray,
   IsEmail,
   IsIn,
   IsISO8601,
+  IsObject,
   IsOptional,
   IsString,
   Matches,
@@ -10,8 +13,13 @@ import {
   MinLength,
   ValidateNested,
 } from 'class-validator';
+import { MAX_REMINDERS } from '@genon/shared';
 import type {
+  AppointmentInput,
+  AppointmentStatus,
   ConsentMethod,
+  CreateAppointmentInput,
+  ReminderTiming,
   CreateEnrollmentInput,
   CreatePatientInput,
   PatientInput,
@@ -60,4 +68,27 @@ export class ManualSendDto implements ScheduleManualInput {
 
 export class OptOutDto {
   @IsOptional() @IsString() @MaxLength(300) reason?: string;
+}
+
+// El momento de cada recordatorio lo valida validateAppointment (shared)
+export class ReminderDto {
+  @IsString() @MinLength(1) template_key!: string;
+  @IsObject() timing!: ReminderTiming;
+}
+
+export class AppointmentDto implements AppointmentInput {
+  @Matches(YMD, { message: 'Fecha inválida (YYYY-MM-DD)' }) date!: string;
+  @Matches(HHMM, { message: 'Hora inválida (HH:mm)' }) time!: string;
+  @IsOptional() @IsString() @MaxLength(120) reason?: string | null;
+  @IsOptional() @IsString() @MaxLength(120) professional?: string | null;
+  @IsOptional() @IsString() @MaxLength(1000) notes?: string | null;
+  @IsArray() @ArrayMaxSize(MAX_REMINDERS) @ValidateNested({ each: true }) @Type(() => ReminderDto) reminders!: ReminderDto[];
+}
+
+export class CreateAppointmentDto extends AppointmentDto implements CreateAppointmentInput {
+  @IsString() patient_id!: string;
+}
+
+export class AppointmentStatusDto {
+  @IsIn(['scheduled', 'attended', 'no_show', 'cancelled']) status!: AppointmentStatus;
 }

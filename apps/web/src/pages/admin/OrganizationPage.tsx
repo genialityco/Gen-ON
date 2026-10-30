@@ -34,6 +34,11 @@ export function OrganizationPage() {
               {ORG_STATUS_LABELS[org.status]}
             </Badge>
             <Badge variant="outline">{PLANS[org.plan]?.label}</Badge>
+            <Badge variant="outline" color="gray">
+              {org.monthly_message_limit === null
+                ? 'Mensajes sin límite'
+                : `Límite: ${org.monthly_message_limit.toLocaleString('es-CO')} mensajes/mes`}
+            </Badge>
           </Group>
           <Button component={Link} to={`/org/${orgId}`} variant="light" rightSection={<IconArrowRight size={16} />}>
             Abrir panel de la clínica
