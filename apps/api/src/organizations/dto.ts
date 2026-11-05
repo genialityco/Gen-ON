@@ -1,4 +1,5 @@
 import {
+  ArrayMaxSize,
   IsArray,
   IsEmail,
   IsIn,
@@ -10,12 +11,15 @@ import {
   MaxLength,
   Min,
   MinLength,
+  ValidateIf,
 } from 'class-validator';
 import {
+  MAX_ALERT_NOTIFY_PHONES,
   ORG_KIND_LABELS,
   ORG_ROLES,
   PLAN_KEYS,
   type AddMemberInput,
+  type AlertLevel,
   type CreateOrganizationInput,
   type OrganizationSettingsInput,
   type OrgKind,
@@ -51,6 +55,11 @@ export class OrganizationSettingsDto implements OrganizationSettingsInput {
   @IsOptional() @IsArray() @IsInt({ each: true }) @Min(0, { each: true }) @Max(6, { each: true })
   blocked_weekdays?: number[];
   @IsOptional() @IsString() @MaxLength(2000) consent_text?: string;
+  @IsOptional() @IsArray() @ArrayMaxSize(MAX_ALERT_NOTIFY_PHONES) @IsString({ each: true }) @MaxLength(25, { each: true })
+  alert_notify_phones?: string[];
+  @IsOptional() @IsIn(['info', 'warning', 'urgent']) alert_notify_level?: AlertLevel;
+  /** null apaga las alertas por falta de respuesta */
+  @IsOptional() @ValidateIf((_, v) => v !== null) @IsInt() @Min(6) @Max(168) no_response_hours?: number | null;
 }
 
 export class AddMemberDto implements AddMemberInput {

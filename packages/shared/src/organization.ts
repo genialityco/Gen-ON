@@ -1,5 +1,6 @@
 import type { MemberRole, OrgRole } from './roles';
 import type { PlanKey } from './plans';
+import type { AlertLevel, TemplateMetaStatus } from './templates';
 
 export type OrgStatus = 'setup' | 'active' | 'suspended';
 
@@ -44,14 +45,39 @@ export interface Organization {
   consent_version: number;
   /** Mensajes a pacientes por mes (hora de la clínica); null = sin límite */
   monthly_message_limit: number | null;
+  /** Celulares del equipo que reciben por WhatsApp las alertas de los botones (máx. 3) */
+  alert_notify_phones: string[];
+  /** Nivel mínimo de alerta que se avisa por WhatsApp */
+  alert_notify_level: AlertLevel;
+  /** Horas sin respuesta a un mensaje con botones para que aparezca en "Requiere atención"; null = no */
+  no_response_hours: number | null;
+  /** Plantilla de aviso al equipo que Gen.ON crea en la cuenta de WhatsApp de la clínica */
+  alert_template: AlertTemplateState | null;
   created_at: string | null;
   updated_at: string | null;
 }
+
+export interface AlertTemplateState {
+  meta_name: string;
+  meta_id: string | null;
+  version: number;
+  status: TemplateMetaStatus;
+  rejected_reason: string | null;
+}
+
+export const MAX_ALERT_NOTIFY_PHONES = 3;
+export const DEFAULT_NO_RESPONSE_HOURS = 48;
+
+/** info < warning < urgent: se avisa lo que esté en el nivel mínimo o por encima. */
+export const ALERT_LEVEL_RANK: Record<AlertLevel, number> = { info: 0, warning: 1, urgent: 2 };
 
 export interface OrganizationSettingsInput {
   default_send_time?: string;
   blocked_weekdays?: number[];
   consent_text?: string;
+  alert_notify_phones?: string[];
+  alert_notify_level?: AlertLevel;
+  no_response_hours?: number | null;
 }
 
 export interface CreateOrganizationInput {

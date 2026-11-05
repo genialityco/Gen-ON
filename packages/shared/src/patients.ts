@@ -39,6 +39,8 @@ export interface Patient {
   consent: Consent | null;
   opted_out: boolean;
   opted_out_at: string | null;
+  /** Quién o cómo: "Escribió \"BAJA\" en WhatsApp", "Registrada por …" */
+  opted_out_reason: string | null;
   created_at: string | null;
   updated_at: string | null;
 }
@@ -201,3 +203,21 @@ export interface PatientImportResult {
   errors: number;
   rows: PatientImportRow[];
 }
+
+/** Mensajes que, por sí solos, dan de baja al paciente (la autorización dice "respondiendo BAJA"). */
+const OPT_OUT_WORDS = ['baja', 'stop', 'darme de baja', 'dar de baja', 'cancelar suscripcion', 'no quiero mas mensajes'];
+
+export function isOptOutKeyword(text: string | null | undefined): boolean {
+  const n = String(text ?? '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z ]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  return OPT_OUT_WORDS.includes(n);
+}
+
+/** Confirmación de la baja cuando el botón no trae su propio texto. */
+export const optOutReply = (clinic: string) =>
+  `Listo, no volverás a recibir mensajes de ${clinic} por este medio. Si fue un error, comunícate con la clínica.`;

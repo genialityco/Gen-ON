@@ -77,3 +77,12 @@ export const MIN_CONTRACT_MONTHS = 3;
 export const SETUP_FEE = 1_200_000;
 export const SETUP_FREE_CONTRACT_MONTHS = 12;
 export const DESIGN_FEE = 2_400_000;
+
+export type PlanFeature = keyof PlanFeatures;
+
+export const hasFeature = (plan: PlanKey, feature: PlanFeature): boolean => !!PLANS[plan]?.features[feature];
+
+/** Nombre del plan más económico que incluye la funcionalidad (para los avisos de "mejora tu plan"). */
+export function planWith(feature: PlanFeature): string {
+  return PLAN_KEYS.map((k) => PLANS[k]).find((p) => p.features[feature])?.label ?? 'superior';
+}

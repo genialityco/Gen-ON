@@ -165,7 +165,9 @@ export function PatientsPage() {
       </Modal>
 
       <Drawer opened={!!openId} onClose={() => open(null)} position="right" size="lg" title="Paciente">
-        {openId && <PatientDrawer org={org} patientId={openId} protocols={protocols} templates={templates} />}
+        {openId && (
+          <PatientDrawer key={openId} org={org} patientId={openId} protocols={protocols} templates={templates} initialTab={params.get('t') ?? undefined} />
+        )}
       </Drawer>
     </Stack>
   );

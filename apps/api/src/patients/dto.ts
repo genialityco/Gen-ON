@@ -13,7 +13,7 @@ import {
   MinLength,
   ValidateNested,
 } from 'class-validator';
-import { MAX_REMINDERS, PATIENT_IMPORT_MAX } from '@genon/shared';
+import { CHAT_MAX_LENGTH, MAX_REMINDERS, PATIENT_IMPORT_MAX } from '@genon/shared';
 import type {
   AppointmentInput,
   AppointmentStatus,
@@ -25,6 +25,7 @@ import type {
   PatientImportInput,
   PatientInput,
   ScheduleManualInput,
+  SendChatInput,
 } from '@genon/shared';
 
 const YMD = /^\d{4}-\d{2}-\d{2}$/;
@@ -107,4 +108,8 @@ export class CreateAppointmentDto extends AppointmentDto implements CreateAppoin
 
 export class AppointmentStatusDto {
   @IsIn(['scheduled', 'attended', 'no_show', 'cancelled']) status!: AppointmentStatus;
+}
+
+export class SendChatDto implements SendChatInput {
+  @IsString() @MinLength(1) @MaxLength(CHAT_MAX_LENGTH) text!: string;
 }

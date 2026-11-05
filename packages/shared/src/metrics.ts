@@ -36,6 +36,8 @@ export interface OrgMetrics {
     cancelled: number;
     /** Respuestas con un botón de confirmar */
     confirmed: number;
+    /** Respuestas con un botón de alerta para la clínica */
+    alerts: number;
     /** Sobre los enviados; null si no hubo envíos */
     delivery_rate: number | null;
     read_rate: number | null;

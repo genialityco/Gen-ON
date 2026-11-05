@@ -88,12 +88,37 @@ Ninguna consulta necesita índices compuestos.
    límite, el resto del mes queda omitido con el motivo y se puede reenviar si se sube el límite. La
    clínica ve el uso en Inicio y recibe aviso desde el 80 %. El mensaje de prueba del asistente no cuenta.
 6. **Webhook**: estados de entrega a la parrilla, el botón que tocó el paciente (payload
-   `o:<envío>:<botón>`) y la aprobación de plantillas.
-7. **Inicio** (`GET /organizations/{org}/home`): "Requiere atención" junta los últimos 7 días de
+   `o:<envío>:<botón>`) y la aprobación de plantillas. Al tocar un botón se ejecuta su acción
+   (`AutoReplyService`): la respuesta automática (`reply_text`, solo planes con `auto_replies`) y la
+   baja (`opt_out`, en todos los planes). Escribir solo "BAJA", "STOP" o "darme de baja" también da
+   de baja al paciente de ese número. Las respuestas salen como texto libre (la ventana de 24 h está
+   abierta porque el paciente acaba de escribir) y quedan en `messages` con `kind`.
+7. **WhatsApp uno a uno** (pestaña WhatsApp del paciente, `ChatService`, planes con `one_to_one`):
+   la conversación con su número (lo que escribió, botones, plantillas de la parrilla, respuestas
+   automáticas y mensajes de la clínica, con su estado de entrega). Se puede escribir texto libre
+   solo dentro de las 24 h siguientes a su último mensaje (`wa_contacts.last_inbound_at`, regla de
+   Meta); fuera de esa ventana hay que enviar una plantilla. Responder deja atendidos sus mensajes
+   en "Requiere atención". Los mensajes de la clínica no cuentan en el límite mensual.
+8. **Inicio** (`GET /organizations/{org}/home`): "Requiere atención" junta los últimos 7 días de
    botones con alerta, envíos fallidos o no entregados y mensajes escritos por pacientes; "Atendido"
    marca el envío (`attention_resolved_at`) o los mensajes de ese número (`handled`). Una respuesta
-   nueva a una alerta ya atendida vuelve a aparecer. "Agenda de hoy" muestra las citas del día con
+   nueva a una alerta ya atendida vuelve a aparecer. También aparecen los mensajes con botones sin
+   respuesta tras `no_response_hours` (Configuración → Alertas; 48 h por defecto, `null` = no).
+   **Aviso por WhatsApp al equipo** (`AlertNotifierService`, planes con `alerts`): al tocar un botón
+   de alerta desde el nivel mínimo (`alert_notify_level`), se avisa a los celulares de
+   `alert_notify_phones` con la plantilla `genon_aviso_alerta_vN`, que Gen.ON crea en la cuenta de
+   la clínica con "Activar avisos" (estado en `organizations/{org}.alert_template`, se actualiza
+   por el webhook o con "Revisar estado"). "Agenda de hoy" muestra las citas del día con
    el último botón de sus recordatorios y las de los 14 días anteriores sin marcar asistencia.
+
+## Planes
+
+`PLANS[plan].features` (`packages/shared/src/plans.ts`) decide qué tiene cada organización; se
+revisa con `hasFeature` en la API (`OrganizationsService.withFeature` responde 403 con el plan que
+la incluye) y en el web (`PlanGate`). Esencial: envíos programados, botones, historial y "Requiere
+atención" con fallas y mensajes escritos. Adherencia agrega respuestas automáticas, alertas (en
+Inicio y aviso por WhatsApp), Métricas, chat uno a uno y **Reporte mensual** (Reporte mensual →
+mes → "Imprimir o guardar PDF"). La baja por botón o por "BAJA" funciona en todos los planes.
 
 ## Cuentas y accesos
 

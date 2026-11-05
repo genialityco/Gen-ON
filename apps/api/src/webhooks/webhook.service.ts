@@ -8,6 +8,8 @@ import { MetaSetupService } from '../meta/meta-setup.service';
 import { isValidMetaSignature, safeEqual } from '../meta/signature';
 import { TemplatesService } from '../templates/templates.service';
 import { OutboxService } from '../patients/outbox.service';
+import { AutoReplyService } from '../patients/auto-reply.service';
+import { AlertNotifierService } from '../patients/alert-notifier.service';
 
 /** Un estado nunca retrocede (read no vuelve a delivered); failed siempre gana. */
 const STATUS_RANK: Record<MessageDeliveryStatus, number> = {
@@ -59,6 +61,8 @@ export class WebhookService {
     private readonly setup: MetaSetupService,
     private readonly templates: TemplatesService,
     private readonly outbox: OutboxService,
+    private readonly replies: AutoReplyService,
+    private readonly notifier: AlertNotifierService,
   ) {}
 
   private org(orgId: string) {
@@ -106,6 +110,7 @@ export class WebhookService {
       for (const change of entry.changes ?? []) {
         if (change.field === 'message_template_status_update') {
           await this.templates.applyWebhookStatus(orgId, change.value);
+          await this.notifier.applyWebhookStatus(orgId, change.value);
           continue;
         }
         if (change.field !== 'messages') continue; // el resto queda en webhook_events
@@ -212,8 +217,16 @@ export class WebhookService {
       return true;
     });
 
-    if (isNew && outboxReply) {
+    if (!isNew) return;
+    if (outboxReply) {
       await this.outbox.recordResponse(orgId, outboxReply.outboxId, outboxReply.index, reply?.title ?? '', at);
+    }
+    // Respuesta automática y bajas: si fallan, el mensaje ya quedó guardado y el error en el log
+    try {
+      if (outboxReply) await this.replies.onButton(orgId, outboxReply.outboxId, outboxReply.index, m.from);
+      else if (m.type === 'text') await this.replies.onText(orgId, m.from, text);
+    } catch (e) {
+      this.logger.error(`Respuesta a ${m.id} (${orgId}): ${(e as Error).message}`);
     }
   }
 }

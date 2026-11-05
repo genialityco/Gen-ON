@@ -23,6 +23,7 @@ import { TemplatesPage } from './pages/clinic/TemplatesPage';
 import { TeamPage } from './pages/clinic/TeamPage';
 import { ClinicSettingsPage } from './pages/clinic/ClinicSettingsPage';
 import { MetricsPage } from './pages/clinic/MetricsPage';
+import { ReportPage } from './pages/clinic/ReportPage';
 
 const queryClient = new QueryClient({
   defaultOptions: { queries: { retry: 1, refetchOnWindowFocus: false } },
@@ -58,6 +59,7 @@ export function App() {
                         <Route path="protocols" element={<ProtocolsPage />} />
                         <Route path="templates" element={<TemplatesPage />} />
                         <Route path="metrics" element={<MetricsPage />} />
+                        <Route path="report" element={<ReportPage />} />
                         <Route element={<RequireOrg min="org_admin" />}>
                           <Route path="team" element={<TeamPage />} />
                           <Route path="settings" element={<ClinicSettingsPage />} />
