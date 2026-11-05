@@ -7,6 +7,7 @@ import {
   IconCalendarTime,
   IconChartBar,
   IconReportAnalytics,
+  IconRobot,
   IconChevronDown,
   IconHome,
   IconListDetails,
@@ -60,6 +61,7 @@ export function AppLayout() {
         ...(hasAtLeast(orgRole, 'org_admin')
           ? [
               { to: `/org/${orgId}/team`, label: 'Equipo', icon: IconUsers },
+              { to: `/org/${orgId}/assistant`, label: 'Asistente IA', icon: IconRobot },
               { to: `/org/${orgId}/settings`, label: 'Configuración', icon: IconSettings },
             ]
           : []),

@@ -120,6 +120,28 @@ atención" con fallas y mensajes escritos. Adherencia agrega respuestas automát
 Inicio y aviso por WhatsApp), Métricas, chat uno a uno y **Reporte mensual** (Reporte mensual →
 mes → "Imprimir o guardar PDF"). La baja por botón o por "BAJA" funciona en todos los planes.
 
+## Asistente IA (plan IA Oráculo)
+
+`apps/api/src/assistant`: cuando un paciente escribe texto (y no es "BAJA"), el webhook llama a
+`AssistantService.handle` sin esperar. Espera 4 s para juntar mensajes seguidos, arma el prompt
+(`prompt.ts`: reglas de seguridad, datos de la clínica, **solo** el contenido aprobado de
+`assistant_knowledge`, primer nombre y próxima cita del paciente) con las últimas 24 h de la
+conversación y llama a Gemini (`GEMINI_API_KEY`, `GEMINI_MODEL`, por defecto
+`gemini-3.5-flash-lite`) pidiendo JSON `{reply, handoff, reason, urgent}`.
+
+- Responde por WhatsApp (`messages.kind = 'assistant'`) y deja atendido el mensaje.
+- `handoff`: envía su texto o `assistant.handoff_message`, marca el mensaje (`handoff_reason`, se
+  ve en Requiere atención), avisa al equipo como alerta (urgente si `urgent`) y se pausa 12 h con
+  ese número (`wa_contacts.assistant_paused_until`).
+- También se pausa 12 h cuando alguien de la clínica escribe por el chat; "Atendido" lo reanuda.
+- Máximo 15 respuestas por número al día; después pasa a una persona. Si Gemini falla, no
+  responde y el mensaje queda en Requiere atención.
+- Se configura en **Asistente IA** (administrador): activar, temas con aprobación (queda quién
+  aprobó), indicaciones de tono, mensaje de transferencia y "Probar" (no envía nada).
+
+Los mensajes de los pacientes se envían a Google (Gemini) para generar la respuesta: Google es
+encargado del tratamiento y debe figurar como tal en la política de datos de la clínica.
+
 ## Cuentas y accesos
 
 - **Rol global** (custom claim `role` del token): `superadmin` (todo) o `staff` (equipo Gen.iality:

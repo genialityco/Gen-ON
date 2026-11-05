@@ -7,6 +7,7 @@ import {
 } from '@nestjs/common';
 import { FieldValue } from 'firebase-admin/firestore';
 import {
+  DEFAULT_ASSISTANT,
   DEFAULT_CONSENT_TEXT,
   DEFAULT_NO_RESPONSE_HOURS,
   MAX_ALERT_NOTIFY_PHONES,
@@ -73,6 +74,7 @@ export class OrganizationsService {
       alert_notify_level: d.alert_notify_level ?? 'urgent',
       no_response_hours: d.no_response_hours === undefined ? DEFAULT_NO_RESPONSE_HOURS : d.no_response_hours,
       alert_template: d.alert_template ?? null,
+      assistant: { ...DEFAULT_ASSISTANT, ...(d.assistant ?? {}) },
       created_at: isoOrNull(d.created_at),
       updated_at: isoOrNull(d.updated_at),
     };

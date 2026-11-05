@@ -91,7 +91,7 @@ export class HomeService {
       this.ref(orgId)
         .collection(COL.messages)
         .where('received_at', '>=', since)
-        .select('direction', 'from', 'contact_name', 'type', 'text', 'outbox_id', 'received_at', 'handled')
+        .select('direction', 'from', 'contact_name', 'type', 'text', 'outbox_id', 'received_at', 'handled', 'handoff_reason')
         .get(),
       this.appointments.list(orgId, addDays(today, -UNMARKED_DAYS), today),
       this.templates.list({ orgId }),
@@ -154,14 +154,15 @@ export class HomeService {
     }
 
     // Mensajes escritos por el paciente (las respuestas con botón van como alertas), uno por número
-    const byContact = new Map<string, { latest: FirebaseFirestore.DocumentData; count: number }>();
+    const byContact = new Map<string, { latest: FirebaseFirestore.DocumentData; count: number; handoff: string | null }>();
     for (const doc of inbound.docs) {
       const d = doc.data();
       if (d.direction !== 'in' || d.handled || d.outbox_id) continue;
       const prev = byContact.get(d.from);
-      if (!prev) byContact.set(d.from, { latest: d, count: 1 });
+      if (!prev) byContact.set(d.from, { latest: d, count: 1, handoff: d.handoff_reason ?? null });
       else {
         prev.count++;
+        prev.handoff ??= d.handoff_reason ?? null;
         if (d.received_at.toMillis() > prev.latest.received_at.toMillis()) prev.latest = d;
       }
     }
@@ -170,7 +171,7 @@ export class HomeService {
       const snap = await this.ref(orgId).collection(COL.patients).where('phone', 'in', phones).select('first_name', 'last_name', 'phone').get();
       snap.docs.forEach((p) => patientsByPhone.set(p.get('phone'), { id: p.id, name: patientFullName(p.data() as any) }));
     }
-    for (const [from, { latest, count }] of byContact) {
+    for (const [from, { latest, count, handoff }] of byContact) {
       const patient = patientsByPhone.get(from);
       attention.push({
         kind: 'inbound',
@@ -180,7 +181,7 @@ export class HomeService {
         at: isoOrNull(latest.received_at)!,
         text: latest.text || MEDIA_LABELS[latest.type] || 'Envió un mensaje',
         level: null,
-        context: null,
+        context: handoff ? `El asistente IA lo pasó al equipo: ${handoff}` : null,
         count,
       });
     }
@@ -226,6 +227,8 @@ export class HomeService {
           batch.update(doc.ref, { handled: true, handled_at: mark.at, handled_by: mark.by });
         }
       }
+      // Atendido: el asistente con IA vuelve a responder a ese número
+      batch.set(this.ref(orgId).collection(COL.waContacts).doc(id), { assistant_paused_until: FieldValue.delete() }, { merge: true });
       await batch.commit();
       return { ok: true };
     }

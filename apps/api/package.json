@@ -8,7 +8,8 @@
     "start:dev": "nest start --watch",
     "test": "jest",
     "superadmin": "node scripts/set-superadmin.mjs",
-    "seed:demo": "node scripts/seed-demo.cjs"
+    "seed:demo": "node scripts/seed-demo.cjs",
+    "seed:assistant": "node scripts/seed-assistant.cjs"
   },
   "dependencies": {
     "@genon/shared": "0.1.0",

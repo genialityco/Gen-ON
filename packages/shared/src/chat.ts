@@ -9,9 +9,10 @@ export const CHAT_MAX_LENGTH = 4096;
  * - outbox: plantilla de la parrilla (protocolo, cita o envío manual)
  * - chat: texto que escribió alguien de la clínica
  * - auto_reply / opt_out: respuesta automática de Gen.ON
- * - test: mensaje de prueba del asistente
+ * - test: mensaje de prueba del asistente de configuración
+ * - assistant: respuesta del asistente con IA
  */
-export type ChatMessageKind = 'patient' | 'outbox' | 'chat' | 'auto_reply' | 'opt_out' | 'test';
+export type ChatMessageKind = 'patient' | 'outbox' | 'chat' | 'auto_reply' | 'opt_out' | 'test' | 'assistant';
 
 export interface ChatMessage {
   id: string;

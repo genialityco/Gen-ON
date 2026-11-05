@@ -10,6 +10,7 @@ import { TemplatesService } from '../templates/templates.service';
 import { OutboxService } from '../patients/outbox.service';
 import { AutoReplyService } from '../patients/auto-reply.service';
 import { AlertNotifierService } from '../patients/alert-notifier.service';
+import { AssistantService } from '../assistant/assistant.service';
 
 /** Un estado nunca retrocede (read no vuelve a delivered); failed siempre gana. */
 const STATUS_RANK: Record<MessageDeliveryStatus, number> = {
@@ -63,6 +64,7 @@ export class WebhookService {
     private readonly outbox: OutboxService,
     private readonly replies: AutoReplyService,
     private readonly notifier: AlertNotifierService,
+    private readonly assistant: AssistantService,
   ) {}
 
   private org(orgId: string) {
@@ -224,7 +226,10 @@ export class WebhookService {
     // Respuesta automática y bajas: si fallan, el mensaje ya quedó guardado y el error en el log
     try {
       if (outboxReply) await this.replies.onButton(orgId, outboxReply.outboxId, outboxReply.index, m.from);
-      else if (m.type === 'text') await this.replies.onText(orgId, m.from, text);
+      else if (m.type === 'text' && !(await this.replies.onText(orgId, m.from, text))) {
+        // El asistente con IA tarda unos segundos: no se espera para responderle a Meta
+        void this.assistant.handle(orgId, m.from, m.id).catch((e) => this.logger.error(`Asistente ${orgId}: ${(e as Error).message}`));
+      }
     } catch (e) {
       this.logger.error(`Respuesta a ${m.id} (${orgId}): ${(e as Error).message}`);
     }

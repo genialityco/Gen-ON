@@ -1,6 +1,7 @@
 import type { MemberRole, OrgRole } from './roles';
 import type { PlanKey } from './plans';
 import type { AlertLevel, TemplateMetaStatus } from './templates';
+import type { AssistantSettings } from './assistant';
 
 export type OrgStatus = 'setup' | 'active' | 'suspended';
 
@@ -53,6 +54,8 @@ export interface Organization {
   no_response_hours: number | null;
   /** Plantilla de aviso al equipo que Gen.ON crea en la cuenta de WhatsApp de la clínica */
   alert_template: AlertTemplateState | null;
+  /** Asistente con IA (plan IA Oráculo) */
+  assistant: AssistantSettings;
   created_at: string | null;
   updated_at: string | null;
 }

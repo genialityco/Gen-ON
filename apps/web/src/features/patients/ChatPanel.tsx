@@ -18,6 +18,7 @@ const KIND_LABELS: Partial<Record<ChatMessage['kind'], string>> = {
   auto_reply: 'Respuesta automática',
   opt_out: 'Confirmación de baja',
   test: 'Mensaje de prueba',
+  assistant: 'Asistente IA',
 };
 
 /** WhatsApp uno a uno: la conversación completa y, con la ventana de 24 h abierta, responder. */

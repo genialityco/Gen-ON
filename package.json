@@ -14,7 +14,8 @@
     "build": "npm run build -w @genon/shared && npm run build -w @genon/api && npm run build -w @genon/web",
     "test": "npm test -w @genon/api",
     "superadmin": "npm run superadmin -w @genon/api --",
-    "seed:demo": "npm run seed:demo -w @genon/api --"
+    "seed:demo": "npm run seed:demo -w @genon/api --",
+    "seed:assistant": "npm run seed:assistant -w @genon/api --"
   },
   "engines": {
     "node": ">=20"

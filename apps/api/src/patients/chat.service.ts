@@ -1,6 +1,7 @@
 import { BadRequestException, ForbiddenException, Injectable } from '@nestjs/common';
 import { FieldValue, Timestamp } from 'firebase-admin/firestore';
 import {
+  ASSISTANT_PAUSE_HOURS,
   CHAT_MAX_LENGTH,
   CHAT_WINDOW_HOURS,
   PLANS,
@@ -19,7 +20,7 @@ import { PatientsService } from './patients.service';
 
 const MAX_MESSAGES = 300;
 const WINDOW_MS = CHAT_WINDOW_HOURS * 3_600_000;
-const OUT_KINDS: ChatMessageKind[] = ['outbox', 'chat', 'auto_reply', 'opt_out', 'test'];
+const OUT_KINDS: ChatMessageKind[] = ['outbox', 'chat', 'auto_reply', 'opt_out', 'test', 'assistant'];
 
 /**
  * Conversación de WhatsApp con un paciente: todo lo enviado y recibido en su
@@ -146,6 +147,12 @@ export class ChatService {
         batch.update(doc.ref, { handled: true, handled_at: FieldValue.serverTimestamp(), handled_by: user.uid });
       }
     }
+    // La clínica tomó la conversación: el asistente con IA no le responde por unas horas
+    batch.set(
+      this.firebase.db.collection(COL.organizations).doc(orgId).collection(COL.waContacts).doc(patient.phone),
+      { assistant_paused_until: Timestamp.fromMillis(Date.now() + ASSISTANT_PAUSE_HOURS * 3_600_000) },
+      { merge: true },
+    );
     await batch.commit();
     return this.conversation(orgId, patientId);
   }

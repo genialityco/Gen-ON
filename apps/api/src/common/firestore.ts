@@ -53,6 +53,8 @@ export const COL = {
   clinicalNotes: 'clinical_notes',
   clinicalAccess: 'clinical_access',
   usageMonthly: 'usage_monthly',
+  // Contenido aprobado del asistente con IA
+  assistantKnowledge: 'assistant_knowledge',
   // Biblioteca global de Gen.iality
   libraryTemplates: 'library_templates',
   libraryProtocols: 'library_protocols',
