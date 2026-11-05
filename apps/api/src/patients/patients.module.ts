@@ -14,6 +14,6 @@ import { PatientsController } from './patients.controller';
   imports: [OrganizationsModule, TemplatesModule, MetaModule],
   controllers: [PatientsController],
   providers: [PatientsService, EnrollmentsService, AppointmentsService, OutboxService, UsageService, DispatcherService],
-  exports: [PatientsService, OutboxService],
+  exports: [PatientsService, OutboxService, AppointmentsService],
 })
 export class PatientsModule {}

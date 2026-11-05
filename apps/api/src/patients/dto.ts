@@ -13,7 +13,7 @@ import {
   MinLength,
   ValidateNested,
 } from 'class-validator';
-import { MAX_REMINDERS } from '@genon/shared';
+import { MAX_REMINDERS, PATIENT_IMPORT_MAX } from '@genon/shared';
 import type {
   AppointmentInput,
   AppointmentStatus,
@@ -22,6 +22,7 @@ import type {
   ReminderTiming,
   CreateEnrollmentInput,
   CreatePatientInput,
+  PatientImportInput,
   PatientInput,
   ScheduleManualInput,
 } from '@genon/shared';
@@ -54,6 +55,21 @@ export class EnrollmentDto implements CreateEnrollmentInput {
 export class CreatePatientDto extends PatientDto implements CreatePatientInput {
   @ValidateNested() @Type(() => ConsentDto) consent!: ConsentDto;
   @IsOptional() @ValidateNested() @Type(() => EnrollmentDto) enrollment?: EnrollmentDto | null;
+}
+
+/** Fila de Excel: se valida en el servicio para informar el error de cada una sin rechazar el archivo. */
+export class ImportRowDto implements PatientInput {
+  @IsString() @MaxLength(200) first_name!: string;
+  @IsString() @MaxLength(200) last_name!: string;
+  @IsString() @MaxLength(50) phone!: string;
+  @IsOptional() @IsString() @MaxLength(100) document?: string | null;
+  @IsOptional() @IsString() @MaxLength(200) email?: string | null;
+  @IsOptional() @IsString() @MaxLength(2000) notes?: string | null;
+}
+
+export class ImportPatientsDto implements PatientImportInput {
+  @IsArray() @ArrayMaxSize(PATIENT_IMPORT_MAX) @ValidateNested({ each: true }) @Type(() => ImportRowDto) rows!: ImportRowDto[];
+  @ValidateNested() @Type(() => ConsentDto) consent!: ConsentDto;
 }
 
 export class RescheduleDto {

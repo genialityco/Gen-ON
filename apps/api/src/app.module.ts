@@ -14,6 +14,7 @@ import { WebhooksModule } from './webhooks/webhooks.module';
 import { UsersModule } from './users/users.module';
 import { ClinicalModule } from './clinical/clinical.module';
 import { MetricsModule } from './metrics/metrics.module';
+import { HomeModule } from './home/home.module';
 import { HealthController } from './health.controller';
 
 @Module({
@@ -31,6 +32,7 @@ import { HealthController } from './health.controller';
     UsersModule,
     ClinicalModule,
     MetricsModule,
+    HomeModule,
   ],
   controllers: [HealthController],
   providers: [{ provide: APP_GUARD, useClass: FirebaseAuthGuard }],

@@ -10,11 +10,14 @@ import type {
   MonthlyUsage,
   OutboxItem,
   Patient,
+  PatientImportInput,
+  PatientImportResult,
   PatientInput,
   PatientListItem,
   ScheduleManualInput,
 } from '@genon/shared';
 import { api } from '../lib/api';
+import { homeKey } from './home';
 
 export interface EnrollResult {
   enrollment: Enrollment | null;
@@ -56,6 +59,7 @@ function useInvalidateAll(orgId: string) {
     qc.invalidateQueries({ queryKey: patientKeys.outbox(orgId) });
     qc.invalidateQueries({ queryKey: patientKeys.usage(orgId) });
     qc.invalidateQueries({ queryKey: patientKeys.appointments(orgId) });
+    qc.invalidateQueries({ queryKey: homeKey(orgId) });
   };
 }
 
@@ -79,6 +83,15 @@ export function useCreatePatient(orgId: string) {
   return useMutation({
     mutationFn: async (input: CreatePatientInput) =>
       (await api.post<CreatePatientResult>(`/organizations/${orgId}/patients`, input)).data,
+    onSuccess: invalidate,
+  });
+}
+
+export function useImportPatients(orgId: string) {
+  const invalidate = useInvalidateAll(orgId);
+  return useMutation({
+    mutationFn: async (input: PatientImportInput) =>
+      (await api.post<PatientImportResult>(`/organizations/${orgId}/patients/import`, input)).data,
     onSuccess: invalidate,
   });
 }

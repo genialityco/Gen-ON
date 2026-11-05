@@ -9,3 +9,4 @@ export * from './patients';
 export * from './appointments';
 export * from './clinical';
 export * from './metrics';
+export * from './home';

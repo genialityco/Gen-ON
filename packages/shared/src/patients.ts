@@ -178,3 +178,26 @@ export function normalizePatientPhone(raw: string): string | null {
 export function patientFullName(p: { first_name: string; last_name: string }) {
   return `${p.first_name} ${p.last_name}`.trim();
 }
+
+/** Filas por importación desde Excel. */
+export const PATIENT_IMPORT_MAX = 1000;
+
+/** Importación desde Excel: una misma autorización registrada para todas las filas. */
+export interface PatientImportInput {
+  rows: PatientInput[];
+  consent: { method: ConsentMethod; note?: string | null };
+}
+
+export interface PatientImportRow {
+  /** Posición en `rows` */
+  index: number;
+  status: 'created' | 'duplicate' | 'error';
+  message: string | null;
+}
+
+export interface PatientImportResult {
+  created: number;
+  duplicates: number;
+  errors: number;
+  rows: PatientImportRow[];
+}

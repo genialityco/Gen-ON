@@ -1,4 +1,4 @@
-import { Alert, Badge, Button, Group, Loader, Paper, Progress, SimpleGrid, Stack, Text, Title } from '@mantine/core';
+import { Alert, Badge, Button, Grid, Group, Loader, Paper, Progress, SimpleGrid, Stack, Text, Title } from '@mantine/core';
 import { IconBrandWhatsapp, IconCalendarEvent, IconInfoCircle, IconUserPlus } from '@tabler/icons-react';
 import { Link } from 'react-router-dom';
 import { MESSAGE_LIMIT_WARN, ORG_STATUS_LABELS, PLANS, addDays, zonedTime } from '@genon/shared';
@@ -6,6 +6,9 @@ import { useOrgId } from '../../auth/guards';
 import { useOrganization } from '../../services/organizations';
 import { useMetaConnection } from '../../services/metaSetup';
 import { useOutbox, useUsage } from '../../services/patients';
+import { useHome } from '../../services/home';
+import { AttentionPanel } from '../../features/home/AttentionPanel';
+import { TodayAgenda } from '../../features/home/TodayAgenda';
 import { money, todayIn } from '../../lib/format';
 
 export function ClinicHomePage() {
@@ -13,6 +16,7 @@ export function ClinicHomePage() {
   const { data: org, isLoading } = useOrganization(orgId);
   const { data: conn } = useMetaConnection(orgId);
   const { data: usage } = useUsage(orgId);
+  const { data: home } = useHome(orgId);
   const tz = org?.timezone ?? 'America/Bogota';
   const today = todayIn(tz);
   const { data: todayItems = [] } = useOutbox(
@@ -155,6 +159,19 @@ export function ClinicHomePage() {
           )}
         </Paper>
       </SimpleGrid>
+
+      {home ? (
+        <Grid>
+          <Grid.Col span={{ base: 12, md: 7 }}>
+            <AttentionPanel orgId={orgId} items={home.attention} tz={tz} />
+          </Grid.Col>
+          <Grid.Col span={{ base: 12, md: 5 }}>
+            <TodayAgenda orgId={orgId} today={home.today} unmarked={home.unmarked} />
+          </Grid.Col>
+        </Grid>
+      ) : (
+        <Loader size="sm" />
+      )}
     </Stack>
   );
 }

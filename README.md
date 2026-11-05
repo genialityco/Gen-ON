@@ -69,6 +69,10 @@ Ninguna consulta necesita índices compuestos.
 3. **Paciente**: se registra con su autorización de datos y se inscribe a un protocolo. La
    inscripción arma su parrilla; los pasos cuya hora ya pasó quedan omitidos. Si a un mensaje le
    faltaría un dato ({{hora}}, {{profesional}}), la inscripción se rechaza.
+   **Importar/Exportar** (Pacientes): Excel con Nombres, Apellidos y Celular (Documento, Correo y
+   Notas opcionales), hasta 1.000 filas; una misma autorización (método y nota) para todo el
+   archivo, los celulares ya registrados se omiten y no se inscriben a protocolos (no cuentan en el
+   cobro hasta que se inscriban). Exportar descarga lo que muestra la lista (todo o la búsqueda).
 4. **Citas** (Citas o Parrilla → Programar recordatorio): fecha, hora, motivo y profesional, con hasta
    5 recordatorios (N días antes a una hora, o N horas antes). Reprogramar cancela lo pendiente y lo
    vuelve a programar; cancelar la cita o marcarla asistió/no asistió cancela lo que no ha salido.
@@ -85,6 +89,11 @@ Ninguna consulta necesita índices compuestos.
    clínica ve el uso en Inicio y recibe aviso desde el 80 %. El mensaje de prueba del asistente no cuenta.
 6. **Webhook**: estados de entrega a la parrilla, el botón que tocó el paciente (payload
    `o:<envío>:<botón>`) y la aprobación de plantillas.
+7. **Inicio** (`GET /organizations/{org}/home`): "Requiere atención" junta los últimos 7 días de
+   botones con alerta, envíos fallidos o no entregados y mensajes escritos por pacientes; "Atendido"
+   marca el envío (`attention_resolved_at`) o los mensajes de ese número (`handled`). Una respuesta
+   nueva a una alerta ya atendida vuelve a aparecer. "Agenda de hoy" muestra las citas del día con
+   el último botón de sus recordatorios y las de los 14 días anteriores sin marcar asistencia.
 
 ## Cuentas y accesos
 

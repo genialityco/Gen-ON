@@ -15,7 +15,9 @@ import {
   AppointmentStatusDto,
   CreateAppointmentDto,
   CreatePatientDto,
-  EnrollmentDto,   ManualSendDto,
+  EnrollmentDto,
+  ImportPatientsDto,
+  ManualSendDto,
   OptOutDto,
   PatientDto,
   RescheduleDto,
@@ -57,6 +59,12 @@ export class PatientsController {
       // El paciente queda creado; el error de la inscripción se informa aparte
       return { patient, enrollment: null, scheduled: 0, warnings: [], enrollment_error: (e as Error).message };
     }
+  }
+
+  /** Importación desde Excel (sin inscripción). */
+  @Post('patients/import')
+  importMany(@Param('orgId') orgId: string, @Body() body: ImportPatientsDto, @CurrentUser() user: AuthUser) {
+    return this.patients.importMany(orgId, body, user);
   }
 
   @Get('patients/:id')

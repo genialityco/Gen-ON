@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { Badge, Button, Drawer, Group, Loader, Modal, Paper, Stack, Table, Text, TextInput, Title } from '@mantine/core';
 import { useDebouncedValue } from '@mantine/hooks';
-import { IconSearch, IconUserPlus } from '@tabler/icons-react';
+import { IconFileExport, IconFileImport, IconSearch, IconUserPlus } from '@tabler/icons-react';
 import { useSearchParams } from 'react-router-dom';
 import { useOrgId } from '../../auth/guards';
 import { useOrganization } from '../../services/organizations';
@@ -9,7 +9,10 @@ import { usePatients } from '../../services/patients';
 import { useProtocols, useTemplates } from '../../services/library';
 import { NewPatientForm } from '../../features/patients/NewPatientForm';
 import { PatientDrawer } from '../../features/patients/PatientDrawer';
+import { ImportPatients } from '../../features/patients/ImportPatients';
 import { fmtDateTime } from '../../lib/format';
+import { exportPatients } from '../../lib/patientsExcel';
+import { notifyError } from '../../lib/api';
 
 const normalize = (s: string) =>
   s
@@ -25,6 +28,8 @@ export function PatientsPage() {
   const { data: templates = [] } = useTemplates({ orgId });
   const [params, setParams] = useSearchParams();
   const [creating, setCreating] = useState(false);
+  const [importing, setImporting] = useState(false);
+  const [exporting, setExporting] = useState(false);
   const [q, setQ] = useState('');
   const [query] = useDebouncedValue(q, 200);
   const openId = params.get('p');
@@ -45,13 +50,35 @@ export function PatientsPage() {
 
   if (!org) return <Loader />;
 
+  // Exporta lo que se ve: todos o el resultado de la búsqueda
+  const exportExcel = () => {
+    setExporting(true);
+    exportPatients(filtered, org.timezone, org.name)
+      .catch(notifyError)
+      .finally(() => setExporting(false));
+  };
+
   return (
     <Stack>
       <Group justify="space-between">
         <Title order={2}>Pacientes</Title>
-        <Button leftSection={<IconUserPlus size={16} />} onClick={() => setCreating(true)}>
-          Nuevo paciente
-        </Button>
+        <Group gap="xs">
+          <Button variant="default" leftSection={<IconFileImport size={16} />} onClick={() => setImporting(true)}>
+            Importar
+          </Button>
+          <Button
+            variant="default"
+            leftSection={<IconFileExport size={16} />}
+            loading={exporting}
+            disabled={!filtered.length}
+            onClick={exportExcel}
+          >
+            Exportar
+          </Button>
+          <Button leftSection={<IconUserPlus size={16} />} onClick={() => setCreating(true)}>
+            Nuevo paciente
+          </Button>
+        </Group>
       </Group>
       <TextInput
         placeholder="Buscar por nombre, celular o documento"
@@ -131,6 +158,10 @@ export function PatientsPage() {
             open(id);
           }}
         />
+      </Modal>
+
+      <Modal opened={importing} onClose={() => setImporting(false)} title="Importar pacientes desde Excel" size="lg">
+        <ImportPatients org={org} onDone={() => setImporting(false)} />
       </Modal>
 
       <Drawer opened={!!openId} onClose={() => open(null)} position="right" size="lg" title="Paciente">
