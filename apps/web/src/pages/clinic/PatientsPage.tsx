@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
-import { Badge, Button, Drawer, Group, Loader, Modal, Paper, Stack, Table, Text, TextInput, Title } from '@mantine/core';
+import { Badge, Button, Drawer, Group, Loader, Menu, Modal, Paper, Stack, Table, Text, TextInput, Title } from '@mantine/core';
+import { canWriteClinical } from '@genon/shared';
 import { useDebouncedValue } from '@mantine/hooks';
 import { IconFileExport, IconFileImport, IconSearch, IconUserPlus } from '@tabler/icons-react';
 import { useSearchParams } from 'react-router-dom';
@@ -10,6 +11,8 @@ import { useProtocols, useTemplates } from '../../services/library';
 import { NewPatientForm } from '../../features/patients/NewPatientForm';
 import { PatientDrawer } from '../../features/patients/PatientDrawer';
 import { ImportPatients } from '../../features/patients/ImportPatients';
+import { ImportClinical } from '../../features/clinical/ImportClinical';
+import { useOrgRole } from '../../auth/AuthProvider';
 import { fmtDateTime } from '../../lib/format';
 import { exportPatients } from '../../lib/patientsExcel';
 import { notifyError } from '../../lib/api';
@@ -28,7 +31,8 @@ export function PatientsPage() {
   const { data: templates = [] } = useTemplates({ orgId });
   const [params, setParams] = useSearchParams();
   const [creating, setCreating] = useState(false);
-  const [importing, setImporting] = useState(false);
+  const [importing, setImporting] = useState<'patients' | 'clinical' | null>(null);
+  const role = useOrgRole(orgId);
   const [exporting, setExporting] = useState(false);
   const [q, setQ] = useState('');
   const [query] = useDebouncedValue(q, 200);
@@ -63,9 +67,19 @@ export function PatientsPage() {
       <Group justify="space-between">
         <Title order={2}>Pacientes</Title>
         <Group gap="xs">
-          <Button variant="default" leftSection={<IconFileImport size={16} />} onClick={() => setImporting(true)}>
-            Importar
-          </Button>
+          <Menu position="bottom-end" withinPortal>
+            <Menu.Target>
+              <Button variant="default" leftSection={<IconFileImport size={16} />}>
+                Importar
+              </Button>
+            </Menu.Target>
+            <Menu.Dropdown>
+              <Menu.Item onClick={() => setImporting('patients')}>Pacientes</Menu.Item>
+              {canWriteClinical(role) && (
+                <Menu.Item onClick={() => setImporting('clinical')}>Fichas de seguimiento</Menu.Item>
+              )}
+            </Menu.Dropdown>
+          </Menu>
           <Button
             variant="default"
             leftSection={<IconFileExport size={16} />}
@@ -160,8 +174,12 @@ export function PatientsPage() {
         />
       </Modal>
 
-      <Modal opened={importing} onClose={() => setImporting(false)} title="Importar pacientes desde Excel" size="lg">
-        <ImportPatients org={org} onDone={() => setImporting(false)} />
+      <Modal opened={importing === 'patients'} onClose={() => setImporting(null)} title="Importar pacientes desde Excel" size="lg">
+        <ImportPatients org={org} onDone={() => setImporting(null)} />
+      </Modal>
+
+      <Modal opened={importing === 'clinical'} onClose={() => setImporting(null)} title="Importar fichas de seguimiento desde Excel" size="lg">
+        <ImportClinical orgId={org.id} onDone={() => setImporting(null)} />
       </Modal>
 
       <Drawer opened={!!openId} onClose={() => open(null)} position="right" size="lg" title="Paciente">

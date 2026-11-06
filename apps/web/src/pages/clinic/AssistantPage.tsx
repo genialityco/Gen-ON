@@ -8,6 +8,8 @@ import {
   Group,
   Loader,
   Modal,
+  Select,
+  Spoiler,
   Paper,
   Stack,
   Switch,
@@ -24,6 +26,7 @@ import {
   ASSISTANT_PAUSE_HOURS,
   KNOWLEDGE_MAX_CONTENT,
   hasFeature,
+  type AssistantTestResult,
   type KnowledgeEntry,
   type Organization,
 } from '@genon/shared';
@@ -31,6 +34,7 @@ import { useOrgId } from '../../auth/guards';
 import { useOrganization } from '../../services/organizations';
 import { useAssistantSettings, useAssistantTest, useKnowledge, useRemoveKnowledge, useSaveKnowledge } from '../../services/assistant';
 import { PlanGate } from '../../features/plans/PlanGate';
+import { usePatients } from '../../services/patients';
 import { errorMessage, notifyError, notifySuccess } from '../../lib/api';
 import { fmtDateTime } from '../../lib/format';
 
@@ -100,6 +104,28 @@ function AssistantBody({ org }: { org: Organization }) {
             Aprueba al menos un tema antes de activarlo.
           </Text>
         )}
+        <Group justify="space-between" mt="md" wrap="nowrap">
+          <div>
+            <Text fw={600}>Usar la ficha de seguimiento</Text>
+            <Text size="xs" c="dimmed">
+              Alergias, medicamentos que toma y las «Indicaciones para el paciente» de las notas marcadas para el asistente
+              (cuidados, medicamentos formulados, qué evitar, signos de alarma y próximo control). El texto interno de las notas
+              nunca se comparte. Esta información se envía a Google (Gemini) para responder y cada consulta queda en el registro
+              de accesos de la ficha.
+            </Text>
+          </div>
+          <Switch
+            size="md"
+            checked={org.assistant.use_clinical}
+            onChange={(e) =>
+              settings.mutate(
+                { use_clinical: e.currentTarget.checked },
+                { onSuccess: () => notifySuccess('Guardado'), onError: notifyError },
+              )
+            }
+            disabled={settings.isPending}
+          />
+        </Group>
       </Paper>
 
       <Paper withBorder p="md">
@@ -128,6 +154,11 @@ function AssistantBody({ org }: { org: Organization }) {
                   <div style={{ minWidth: 0 }}>
                     <Text size="sm" fw={500}>
                       {k.title}
+                      {k.procedure && (
+                        <Badge ml={6} size="xs" variant="outline" color="gray">
+                          {k.procedure}
+                        </Badge>
+                      )}
                     </Text>
                     <Text size="xs" c="dimmed" lineClamp={2}>
                       {k.content}
@@ -181,55 +212,149 @@ function AssistantBody({ org }: { org: Organization }) {
         </Stack>
       </Paper>
 
-      <TestBox orgId={org.id} />
+      <TestBox org={org} />
 
       <KnowledgeModal orgId={org.id} editing={editing} onClose={() => setEditing(null)} />
     </Stack>
   );
 }
 
-function TestBox({ orgId }: { orgId: string }) {
-  const test = useAssistantTest(orgId);
+interface TestTurn {
+  role: 'user' | 'model';
+  text: string;
+  result?: AssistantTestResult;
+}
+
+const SAMPLE_QUESTIONS = ['¿Cuándo es mi próxima cita?', '¿Qué cuidados debo tener después de mi procedimiento?', '¿Qué indicaciones me han enviado?'];
+
+/**
+ * Conversación de prueba: como alguien que no es paciente o como un paciente
+ * registrado (con sus citas, procedimientos e indicaciones). No envía nada.
+ */
+function TestBox({ org }: { org: Organization }) {
+  const test = useAssistantTest(org.id);
+  const { data: patients = [] } = usePatients(org.id);
+  const [patientId, setPatientId] = useState<string | null>(null);
+  const [turns, setTurns] = useState<TestTurn[]>([]);
   const [question, setQuestion] = useState('');
+  const [context, setContext] = useState<string[]>([]);
+
+  const ask = (text: string) => {
+    const q = text.trim();
+    if (!q || test.isPending) return;
+    const next: TestTurn[] = [...turns, { role: 'user', text: q }];
+    setTurns(next);
+    setQuestion('');
+    test.mutate(
+      { messages: next.map(({ role, text }) => ({ role, text })), patient_id: patientId },
+      {
+        onSuccess: (r) => {
+          setContext(r.context);
+          setTurns([...next, { role: 'model', text: r.reply || org.assistant.handoff_message, result: r }]);
+        },
+        onError: () => setTurns(turns),
+      },
+    );
+  };
+  const reset = (id: string | null) => {
+    setPatientId(id);
+    setTurns([]);
+    setContext([]);
+    test.reset();
+  };
+
   return (
     <Paper withBorder p="md">
-      <Stack gap="xs">
-        <Text fw={600}>Probar</Text>
-        <Text size="xs" c="dimmed">
-          Escribe como si fueras un paciente. Usa las indicaciones y el contenido aprobado guardados; no envía nada.
-        </Text>
+      <Stack gap="sm">
+        <div>
+          <Text fw={600}>Probar</Text>
+          <Text size="xs" c="dimmed">
+            Escribe como si fueras la persona que le escribe a la clínica. Elige un paciente para que el asistente conozca sus
+            citas, procedimientos e indicaciones. Usa lo guardado en esta página; no envía nada.
+          </Text>
+        </div>
+        <Group align="end">
+          <Select
+            label="Escribir como"
+            placeholder="Alguien que no es paciente"
+            data={patients.map((p) => ({ value: p.id, label: `${p.first_name} ${p.last_name} · +${p.phone}` }))}
+            value={patientId}
+            onChange={reset}
+            searchable
+            clearable
+            nothingFoundMessage="Sin resultados"
+            style={{ flex: 1 }}
+          />
+          <Button variant="default" onClick={() => reset(patientId)} disabled={!turns.length}>
+            Reiniciar
+          </Button>
+        </Group>
+
+        {context.length > 0 && (
+          <Spoiler maxHeight={0} showLabel="Ver lo que el asistente sabe de este paciente" hideLabel="Ocultar">
+            <Paper withBorder p="xs" bg="gray.0">
+              <Text size="xs" style={{ whiteSpace: 'pre-wrap' }}>
+                {context.join('\n')}
+              </Text>
+            </Paper>
+          </Spoiler>
+        )}
+
+        <Paper withBorder bg="gray.0" p="sm" mih={120}>
+          {!turns.length ? (
+            <Group gap="xs">
+              {(patientId ? SAMPLE_QUESTIONS : ['¿Cuál es el horario del sábado?', '¿Dónde quedan?', 'Quiero agendar una valoración']).map((s) => (
+                <Button key={s} size="compact-xs" variant="light" onClick={() => ask(s)}>
+                  {s}
+                </Button>
+              ))}
+            </Group>
+          ) : (
+            <Stack gap={6}>
+              {turns.map((t, i) => (
+                <Group key={i} justify={t.role === 'user' ? 'flex-end' : 'flex-start'}>
+                  <Paper px="sm" py={6} radius="md" maw="85%" bg={t.role === 'user' ? 'white' : 'teal.0'} withBorder={t.role === 'user'}>
+                    {t.role === 'model' && (
+                      <Text size="xs" c="dimmed" fw={500}>
+                        Asistente IA
+                      </Text>
+                    )}
+                    <Text size="sm" style={{ whiteSpace: 'pre-wrap' }}>
+                      {t.text}
+                    </Text>
+                    {t.result?.handoff && (
+                      <Group gap="xs" mt={4}>
+                        <Badge size="xs" color={t.result.urgent ? 'red' : 'orange'} variant="light">
+                          {t.result.urgent ? 'Urgente · pasa a una persona' : 'Pasa a una persona'}
+                        </Badge>
+                        {t.result.reason && (
+                          <Text size="xs" c="dimmed">
+                            {t.result.reason}
+                          </Text>
+                        )}
+                      </Group>
+                    )}
+                  </Paper>
+                </Group>
+              ))}
+              {test.isPending && <Loader size="xs" type="dots" />}
+            </Stack>
+          )}
+        </Paper>
+
         <Group align="end" wrap="nowrap">
           <TextInput
             style={{ flex: 1 }}
-            placeholder="¿Cuál es el horario del sábado?"
+            placeholder="Escribe un mensaje"
             value={question}
             onChange={(e) => setQuestion(e.currentTarget.value)}
-            onKeyDown={(e) => e.key === 'Enter' && question.trim() && test.mutate(question)}
+            onKeyDown={(e) => e.key === 'Enter' && ask(question)}
           />
-          <Button leftSection={<IconSend size={16} />} loading={test.isPending} disabled={!question.trim()} onClick={() => test.mutate(question)}>
-            Preguntar
+          <Button leftSection={<IconSend size={16} />} loading={test.isPending} disabled={!question.trim()} onClick={() => ask(question)}>
+            Enviar
           </Button>
         </Group>
         {test.isError && <Alert color="red">{errorMessage(test.error)}</Alert>}
-        {test.data && (
-          <Paper p="sm" bg="teal.0" radius="md">
-            <Text size="sm" style={{ whiteSpace: 'pre-wrap' }}>
-              {test.data.reply || '(sin texto: enviaría el mensaje de transferencia)'}
-            </Text>
-            {test.data.handoff && (
-              <Group gap="xs" mt="xs">
-                <Badge color={test.data.urgent ? 'red' : 'orange'} variant="light">
-                  {test.data.urgent ? 'Urgente · pasa a una persona' : 'Pasa a una persona'}
-                </Badge>
-                {test.data.reason && (
-                  <Text size="xs" c="dimmed">
-                    {test.data.reason}
-                  </Text>
-                )}
-              </Group>
-            )}
-          </Paper>
-        )}
       </Stack>
     </Paper>
   );
@@ -248,12 +373,14 @@ function KnowledgeForm({ orgId, entry, onDone }: { orgId: string; entry: Knowled
   const remove = useRemoveKnowledge(orgId);
   const [title, setTitle] = useState(entry?.title ?? '');
   const [content, setContent] = useState(entry?.content ?? '');
+  const [procedure, setProcedure] = useState(entry?.procedure ?? '');
   const [approved, setApproved] = useState(entry?.approved ?? false);
-  const changed = !!entry && (entry.title !== title.trim() || entry.content !== content.trim());
+  const changed =
+    !!entry && (entry.title !== title.trim() || entry.content !== content.trim() || (entry.procedure ?? '') !== procedure.trim());
 
   const submit = () =>
     save.mutate(
-      { id: entry?.id ?? null, input: { title, content, approved } },
+      { id: entry?.id ?? null, input: { title, content, procedure: procedure.trim() || null, approved } },
       { onSuccess: () => (notifySuccess('Tema guardado'), onDone()), onError: notifyError },
     );
   const confirmRemove = () =>
@@ -268,6 +395,14 @@ function KnowledgeForm({ orgId, entry, onDone }: { orgId: string; entry: Knowled
   return (
     <Stack>
       <TextInput label="Tema" placeholder="Horario de atención" value={title} onChange={(e) => setTitle(e.currentTarget.value)} maxLength={120} />
+      <TextInput
+        label="Aplica a un procedimiento (opcional)"
+        description="Por ejemplo «rinoplastia». Así el asistente solo usa este tema con pacientes de ese procedimiento (cuidados, preparación)."
+        placeholder="Todos los pacientes"
+        value={procedure}
+        onChange={(e) => setProcedure(e.currentTarget.value)}
+        maxLength={120}
+      />
       <Textarea
         label="Contenido"
         description="Escribe la información tal como el asistente la puede decir. Sin datos de pacientes."

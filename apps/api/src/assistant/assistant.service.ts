@@ -4,13 +4,18 @@ import {
   ASSISTANT_DAILY_LIMIT,
   ASSISTANT_PAUSE_HOURS,
   KNOWLEDGE_MAX_ENTRIES,
+  addDays,
   formatLongDate,
   formatTime12,
   hasFeature,
   localDate,
   localTime,
+  matchesProcedure,
+  renderText,
   type AssistantReply,
   type AssistantSettingsInput,
+  type AssistantTestInput,
+  type AssistantTestResult,
   type KnowledgeEntry,
   type KnowledgeInput,
   type Organization,
@@ -25,9 +30,19 @@ import { MetaConnectionStore } from '../meta/meta-connection.store';
 import { PatientsService } from '../patients/patients.service';
 import { AlertNotifierService } from '../patients/alert-notifier.service';
 import { GeminiClient, type GeminiTurn } from './gemini.client';
+import { TemplatesService } from '../templates/templates.service';
+import { ClinicalService } from '../clinical/clinical.service';
+import { appointmentContext } from '../patients/appointments.service';
+import { variableValues } from '../patients/variables';
 import { REPLY_SCHEMA, conversationTurns, systemPrompt, type PromptPatient } from './prompt';
+import { buildPatientContext } from './patient-context';
 
 const HISTORY_MS = 24 * 3_600_000;
+/** Indicaciones ya recibidas que conoce el asistente: de los últimos días, las más recientes. */
+const RECEIVED_DAYS = 90;
+/** Notas de la ficha con indicaciones para el paciente: de los últimos días. */
+const CLINICAL_DAYS = 365;
+const MAX_RECEIVED = 8;
 const HISTORY_TURNS = 20;
 
 type ModelReply = AssistantReply & { urgent?: boolean };
@@ -53,6 +68,8 @@ export class AssistantService {
     private readonly store: MetaConnectionStore,
     private readonly graph: MetaGraphClient,
     private readonly gemini: GeminiClient,
+    private readonly templates: TemplatesService,
+    private readonly clinical: ClinicalService,
   ) {}
 
   private ref(orgId: string) {
@@ -70,6 +87,7 @@ export class AssistantService {
     const next = { ...org.assistant };
     if (input.enabled !== undefined) next.enabled = input.enabled;
     if (input.instructions !== undefined) next.instructions = input.instructions.trim();
+    if (input.use_clinical !== undefined) next.use_clinical = input.use_clinical;
     if (input.handoff_message !== undefined) {
       if (input.handoff_message.trim().length < 10) throw new BadRequestException('El mensaje de transferencia es muy corto');
       next.handoff_message = input.handoff_message.trim();
@@ -84,6 +102,7 @@ export class AssistantService {
       id,
       title: d.title,
       content: d.content,
+      procedure: d.procedure ?? null,
       approved: !!d.approved,
       approved_by_name: d.approved_by_name ?? null,
       approved_at: isoOrNull(d.approved_at),
@@ -107,12 +126,14 @@ export class AssistantService {
     }
     const title = input.title.trim();
     const content = input.content.trim();
-    const changed = !prev || prev.title !== title || prev.content !== content;
+    const procedure = input.procedure?.trim() || null;
+    const changed = !prev || prev.title !== title || prev.content !== content || (prev.procedure ?? null) !== procedure;
     const approved = input.approved;
     await ref.set(
       {
         title,
         content,
+        procedure,
         approved,
         ...(approved && (changed || !prev?.approved)
           ? { approved_by: user.uid, approved_by_name: user.name || user.email, approved_at: FieldValue.serverTimestamp() }
@@ -131,10 +152,13 @@ export class AssistantService {
     return { ok: true };
   }
 
-  /** Pregunta de prueba desde la configuración: no envía nada. */
-  async test(orgId: string, question: string): Promise<ModelReply> {
+  /** Conversación de prueba desde la configuración, opcionalmente como un paciente: no envía nada. */
+  async test(orgId: string, input: AssistantTestInput): Promise<AssistantTestResult> {
     const org = await this.orgs.withFeature(orgId, 'ai_assistant');
-    return this.ask(org, [{ role: 'user', text: question }], null);
+    const patient = input.patient_id ? await this.patients.get(orgId, input.patient_id) : null;
+    const context = await this.patientContext(orgId, org, patient);
+    const reply = await this.ask(org, conversationTurns(input.messages), context);
+    return { ...reply, urgent: !!reply.urgent, context: context ? [`Primer nombre: ${context.first_name}`, ...context.context] : [] };
   }
 
   // ---- Conversación ----
@@ -244,38 +268,70 @@ export class AssistantService {
     };
   }
 
-  /** Próxima cita y protocolos activos del paciente, en texto. */
-  private async patientContext(orgId: string, org: Organization, patient: Patient | null): Promise<PromptPatient | null> {
+  /**
+   * Lo que el paciente puede consultar de sí mismo: datos registrados, citas,
+   * procedimientos e indicaciones que ya recibió (el texto aprobado de cada
+   * plantilla con sus datos).
+   */
+  private async patientContext(orgId: string, org: Organization, patient: Patient | null) {
     if (!patient) return null;
     const now = new Date();
-    const nowLocal = `${localDate(now, org.timezone)}${localTime(now, org.timezone)}`;
-    const [appts, enrollments] = await Promise.all([
-      this.ref(orgId).collection(COL.appointments).where('patient_id', '==', patient.id).get(),
-      this.ref(orgId).collection(COL.enrollments).where('patient_id', '==', patient.id).get(),
+    const today = localDate(now, org.timezone);
+    const since = now.getTime() - RECEIVED_DAYS * 86_400_000;
+    const ref = this.ref(orgId);
+    const [appts, enrollments, outbox, templates, clinical] = await Promise.all([
+      ref.collection(COL.appointments).where('patient_id', '==', patient.id).get(),
+      ref.collection(COL.enrollments).where('patient_id', '==', patient.id).get(),
+      ref.collection(COL.outbox).where('patient_id', '==', patient.id).get(),
+      this.templates.list({ orgId }),
+      // La ficha solo si la clínica lo permite; queda en su registro de accesos
+      org.assistant.use_clinical ? this.clinical.forAssistant(orgId, patient, addDays(today, -CLINICAL_DAYS)) : null,
     ]);
-    const context: string[] = [];
-    const next = appts.docs
-      .map((d) => d.data())
-      .filter((a) => a.status === 'scheduled' && `${a.date}${a.time}` >= nowLocal)
-      .sort((a, b) => `${a.date}${a.time}`.localeCompare(`${b.date}${b.time}`))[0];
-    if (next) {
-      context.push(
-        `Próxima cita: ${formatLongDate(next.date)}, ${formatTime12(next.time)}${next.reason ? `, ${next.reason}` : ''}${next.professional ? `, con ${next.professional}` : ''}.`,
-      );
-    } else {
-      context.push('No tiene citas próximas agendadas.');
-    }
-    for (const e of enrollments.docs.map((d) => d.data()).filter((e) => e.status === 'active')) {
-      context.push(
-        `En seguimiento: ${e.protocol_name}${e.procedure ? ` (${e.procedure})` : ''}, fecha del procedimiento ${formatLongDate(e.reference_date)}.`,
-      );
-    }
-    return { first_name: patient.first_name, context };
+    const tpl = new Map(templates.map((t) => [t.key, t]));
+    const enrollmentById = new Map(enrollments.docs.map((d) => [d.id, d.data()]));
+    const appointmentById = new Map(appts.docs.map((d) => [d.id, d.data()]));
+
+    const items = outbox.docs.map((d) => d.data());
+    const received = items
+      .filter((o) => o.status === 'sent' && (o.sent_at?.toMillis() ?? 0) >= since)
+      .sort((a, b) => b.sent_at.toMillis() - a.sent_at.toMillis())
+      .slice(0, MAX_RECEIVED)
+      .reverse()
+      .map((o) => {
+        const t = tpl.get(o.template_key);
+        const body = t?.approved?.body ?? t?.body;
+        if (!body) return null;
+        const appt = o.appointment_id ? appointmentById.get(o.appointment_id) : null;
+        const enrollment = appt ? appointmentContext(appt as any) : o.enrollment_id ? (enrollmentById.get(o.enrollment_id) as any) : null;
+        const text = renderText(body, variableValues({ org, patient, enrollment })).replace(/\s+/g, ' ').trim();
+        return { date: localDate(o.sent_at.toDate(), org.timezone), label: o.step_label ?? t?.label ?? 'Mensaje', text };
+      })
+      .filter((m): m is NonNullable<typeof m> => !!m);
+    const scheduled = items
+      .filter((o) => o.status === 'scheduled' && (o.local_date as string) >= today)
+      .map((o) => o.local_date as string)
+      .sort();
+
+    return buildPatientContext(
+      {
+        patient,
+        appointments: appts.docs.map((d) => d.data() as any),
+        enrollments: enrollments.docs.map((d) => d.data() as any),
+        received,
+        scheduled,
+        clinical,
+      },
+      today,
+      `${today}${localTime(now, org.timezone)}`,
+    );
   }
 
-  private async ask(org: Organization, turns: GeminiTurn[], patient: PromptPatient | null): Promise<ModelReply> {
+  private async ask(org: Organization, turns: GeminiTurn[], patient: (PromptPatient & { procedures: string[] }) | null): Promise<ModelReply> {
     if (!turns.length) throw new Error('No hay mensaje del paciente para responder');
-    const knowledge = (await this.listKnowledge(org.id)).filter((k) => k.approved);
+    // Los temas de un procedimiento solo van a pacientes de ese procedimiento
+    const knowledge = (await this.listKnowledge(org.id)).filter(
+      (k) => k.approved && (!k.procedure || !patient || matchesProcedure(k.procedure, patient.procedures)),
+    );
     const now = new Date();
     const system = systemPrompt({
       org,

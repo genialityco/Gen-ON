@@ -1,6 +1,6 @@
-import type { CellValue, Workbook } from 'exceljs';
 import { CONSENT_METHOD_LABELS, PATIENT_IMPORT_MAX, type PatientInput, type PatientListItem } from '@genon/shared';
 import { fmtDateTime } from './format';
+import { cellText, download, newWorkbook, normalize, styleHeader } from './excel';
 
 /** Columnas que se leen al importar; la plantilla y la exportación usan el primer nombre de cada una. */
 const COLUMNS: Record<keyof PatientInput, string[]> = {
@@ -14,48 +14,6 @@ const COLUMNS: Record<keyof PatientInput, string[]> = {
 const MAX_LENGTH: Record<keyof PatientInput, number> = { first_name: 200, last_name: 200, phone: 50, document: 100, email: 200, notes: 2000 };
 const REQUIRED:(keyof PatientInput)[] = ['first_name', 'last_name', 'phone'];
 const HEADERS = ['Nombres', 'Apellidos', 'Celular', 'Documento', 'Correo', 'Notas'];
-
-const normalize = (s: string) =>
-  s
-    .normalize('NFD')
-    .replace(/[̀-ͯ]/g, '')
-    .replace(/[*:]/g, '')
-    .toLowerCase()
-    .trim();
-
-/** exceljs se carga solo cuando se usa (pesa ~1 MB). */
-async function newWorkbook(): Promise<Workbook> {
-  const ExcelJS = (await import('exceljs')).default;
-  return new ExcelJS.Workbook();
-}
-
-function cellText(v: CellValue): string {
-  if (v === null || v === undefined) return '';
-  if (v instanceof Date) return v.toISOString().slice(0, 10);
-  if (typeof v === 'object') {
-    if ('richText' in v) return v.richText.map((r) => r.text).join('');
-    if ('text' in v) return String(v.text);
-    if ('result' in v) return cellText(v.result as CellValue);
-    return '';
-  }
-  return String(v);
-}
-
-async function download(wb: Workbook, filename: string) {
-  const buffer = await wb.xlsx.writeBuffer();
-  const url = URL.createObjectURL(new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }));
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = filename;
-  a.click();
-  setTimeout(() => URL.revokeObjectURL(url), 1000);
-}
-
-function styleHeader(ws: ReturnType<Workbook['addWorksheet']>, widths: number[]) {
-  ws.getRow(1).font = { bold: true };
-  ws.views = [{ state: 'frozen', ySplit: 1 }];
-  widths.forEach((w, i) => (ws.getColumn(i + 1).width = w));
-}
 
 export async function downloadImportTemplate() {
   const wb = await newWorkbook();

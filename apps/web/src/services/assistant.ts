@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import type { AssistantReply, AssistantSettingsInput, KnowledgeEntry, KnowledgeInput, Organization } from '@genon/shared';
+import type { AssistantSettingsInput, AssistantTestInput, AssistantTestResult, KnowledgeEntry, KnowledgeInput, Organization } from '@genon/shared';
 import { api } from '../lib/api';
 import { orgKeys } from './organizations';
 
@@ -40,10 +40,10 @@ export function useRemoveKnowledge(orgId: string) {
   });
 }
 
-/** Pregunta de prueba: muestra lo que respondería sin enviar nada. */
+/** Conversación de prueba (opcionalmente como un paciente): muestra lo que respondería sin enviar nada. */
 export function useAssistantTest(orgId: string) {
   return useMutation({
-    mutationFn: async (question: string) =>
-      (await api.post<AssistantReply & { urgent?: boolean }>(`/organizations/${orgId}/assistant/test`, { question })).data,
+    mutationFn: async (input: AssistantTestInput) =>
+      (await api.post<AssistantTestResult>(`/organizations/${orgId}/assistant/test`, input)).data,
   });
 }

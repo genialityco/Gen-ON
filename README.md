@@ -73,6 +73,12 @@ Ninguna consulta necesita índices compuestos.
    Notas opcionales), hasta 1.000 filas; una misma autorización (método y nota) para todo el
    archivo, los celulares ya registrados se omiten y no se inscriben a protocolos (no cuentan en el
    cobro hasta que se inscriban). Exportar descarga lo que muestra la lista (todo o la búsqueda).
+   **Importar → Fichas de seguimiento** (profesional de salud o administrador,
+   `POST /organizations/{org}/clinical/import`): una fila por atención; el paciente se busca por
+   celular o documento. Las columnas de antecedentes que vienen reemplazan solo esos campos (con
+   la versión anterior en `history/`); si la fila trae nota, procedimiento o indicaciones para el
+   paciente, se crea una nota a nombre de quien importa (`imported_from`). Cada ficha tocada
+   queda en `clinical_access`.
 4. **Citas** (Citas o Parrilla → Programar recordatorio): fecha, hora, motivo y profesional, con hasta
    5 recordatorios (N días antes a una hora, o N horas antes). Reprogramar cancela lo pendiente y lo
    vuelve a programar; cancelar la cita o marcarla asistió/no asistió cancela lo que no ha salido.
@@ -125,7 +131,13 @@ mes → "Imprimir o guardar PDF"). La baja por botón o por "BAJA" funciona en t
 `apps/api/src/assistant`: cuando un paciente escribe texto (y no es "BAJA"), el webhook llama a
 `AssistantService.handle` sin esperar. Espera 4 s para juntar mensajes seguidos, arma el prompt
 (`prompt.ts`: reglas de seguridad, datos de la clínica, **solo** el contenido aprobado de
-`assistant_knowledge`, primer nombre y próxima cita del paciente) con las últimas 24 h de la
+`assistant_knowledge` y, si escribe un paciente, lo que puede consultar de sí mismo
+(`patient-context.ts`: datos registrados, citas próximas y anteriores, procedimientos e
+indicaciones que ya recibió con el texto aprobado de cada plantilla; con `assistant.use_clinical`,
+alergias, medicamentos que toma y las "Indicaciones para el paciente" (`guidance`) de las notas de
+la ficha marcadas `share_with_assistant`, nunca el texto interno; cada uso queda en
+`clinical_access` como "Consultó el asistente IA"). Un tema con `procedure`
+solo se usa con pacientes de ese procedimiento. Va con las últimas 24 h de la
 conversación y llama a Gemini (`GEMINI_API_KEY`, `GEMINI_MODEL`, por defecto
 `gemini-3.5-flash-lite`) pidiendo JSON `{reply, handoff, reason, urgent}`.
 

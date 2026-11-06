@@ -34,9 +34,9 @@ export class AssistantController {
     return this.assistant.removeKnowledge(orgId, id);
   }
 
-  /** Pregunta de prueba: muestra lo que respondería, sin enviar nada. */
+  /** Conversación de prueba (opcionalmente como un paciente): muestra lo que respondería, sin enviar nada. */
   @Post('test')
   test(@Param('orgId') orgId: string, @Body() body: AssistantTestDto, @CurrentUser() user: AuthUser) {
-    return this.assistant.test(orgId, body.question);
+    return this.assistant.test(orgId, body);
   }
 }
