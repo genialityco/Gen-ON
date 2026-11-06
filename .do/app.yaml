@@ -53,3 +53,10 @@ services:
       - key: DISPATCH_ENABLED
         scope: RUN_TIME
         value: "true"
+      # Asistente con IA (plan IA Oráculo)
+      - key: GEMINI_API_KEY
+        scope: RUN_TIME
+        type: SECRET
+      - key: GEMINI_MODEL
+        scope: RUN_TIME
+        value: gemini-3.5-flash-lite

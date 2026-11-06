@@ -5,6 +5,7 @@ import {
   UNMARKED_DAYS,
   addDays,
   attentionRank,
+  hasFeature,
   localDate,
   patientFullName,
   type AttentionItem,
@@ -73,12 +74,24 @@ export class HomeService {
         .col(orgId)
         .where('send_at', '>=', since)
         .where('send_at', '<=', Timestamp.fromDate(now))
-        .select('status', 'delivery_status', 'status_reason', 'patient_id', 'patient_name', 'step_label', 'send_at', 'sent_at', 'attention_resolved_at')
+        .select(
+          'status',
+          'delivery_status',
+          'status_reason',
+          'patient_id',
+          'patient_name',
+          'step_label',
+          'send_at',
+          'sent_at',
+          'template_key',
+          'response',
+          'attention_resolved_at',
+        )
         .get(),
       this.ref(orgId)
         .collection(COL.messages)
         .where('received_at', '>=', since)
-        .select('direction', 'from', 'contact_name', 'type', 'text', 'outbox_id', 'received_at', 'handled')
+        .select('direction', 'from', 'contact_name', 'type', 'text', 'outbox_id', 'received_at', 'handled', 'handoff_reason')
         .get(),
       this.appointments.list(orgId, addDays(today, -UNMARKED_DAYS), today),
       this.templates.list({ orgId }),
@@ -111,17 +124,29 @@ export class HomeService {
       });
     }
 
+    // Mensajes con botones que el paciente no ha contestado en el plazo de la clínica
+    const hours = org.no_response_hours;
+    const answerBy = hours ? now.getTime() - hours * 3_600_000 : null;
+    const hasButtons = (key: string) => {
+      const t = tpl.get(key);
+      return (t?.approved?.buttons ?? t?.buttons ?? []).some((b) => b.type === 'QUICK_REPLY');
+    };
+
     for (const doc of recent.docs) {
       const d = doc.data();
+      if (d.attention_resolved_at) continue;
       const failed = d.status === 'failed' || (d.status === 'sent' && d.delivery_status === 'failed');
-      if (!failed || d.attention_resolved_at) continue;
+      const sentAt = d.sent_at ?? d.send_at;
+      const unanswered =
+        !failed && answerBy !== null && d.status === 'sent' && !d.response && sentAt.toMillis() <= answerBy && hasButtons(d.template_key);
+      if (!failed && !unanswered) continue;
       attention.push({
-        kind: 'failed',
+        kind: failed ? 'failed' : 'no_response',
         id: doc.id,
         patient_id: d.patient_id,
         name: d.patient_name,
-        at: isoOrNull(d.sent_at ?? d.send_at)!,
-        text: d.status_reason || 'Sin detalle',
+        at: isoOrNull(sentAt)!,
+        text: failed ? d.status_reason || 'Sin detalle' : `Sin respuesta en ${hours} h`,
         level: null,
         context: d.step_label ?? null,
         count: 1,
@@ -129,14 +154,15 @@ export class HomeService {
     }
 
     // Mensajes escritos por el paciente (las respuestas con botón van como alertas), uno por número
-    const byContact = new Map<string, { latest: FirebaseFirestore.DocumentData; count: number }>();
+    const byContact = new Map<string, { latest: FirebaseFirestore.DocumentData; count: number; handoff: string | null }>();
     for (const doc of inbound.docs) {
       const d = doc.data();
       if (d.direction !== 'in' || d.handled || d.outbox_id) continue;
       const prev = byContact.get(d.from);
-      if (!prev) byContact.set(d.from, { latest: d, count: 1 });
+      if (!prev) byContact.set(d.from, { latest: d, count: 1, handoff: d.handoff_reason ?? null });
       else {
         prev.count++;
+        prev.handoff ??= d.handoff_reason ?? null;
         if (d.received_at.toMillis() > prev.latest.received_at.toMillis()) prev.latest = d;
       }
     }
@@ -145,7 +171,7 @@ export class HomeService {
       const snap = await this.ref(orgId).collection(COL.patients).where('phone', 'in', phones).select('first_name', 'last_name', 'phone').get();
       snap.docs.forEach((p) => patientsByPhone.set(p.get('phone'), { id: p.id, name: patientFullName(p.data() as any) }));
     }
-    for (const [from, { latest, count }] of byContact) {
+    for (const [from, { latest, count, handoff }] of byContact) {
       const patient = patientsByPhone.get(from);
       attention.push({
         kind: 'inbound',
@@ -155,12 +181,14 @@ export class HomeService {
         at: isoOrNull(latest.received_at)!,
         text: latest.text || MEDIA_LABELS[latest.type] || 'Envió un mensaje',
         level: null,
-        context: null,
+        context: handoff ? `El asistente IA lo pasó al equipo: ${handoff}` : null,
         count,
       });
     }
 
-    attention.sort((a, b) => attentionRank(a) - attentionRank(b) || b.at.localeCompare(a.at));
+    // Alertas de botones y faltas de respuesta: planes con `alerts` (fallas y mensajes escritos, en todos)
+    const visible = hasFeature(org.plan, 'alerts') ? attention : attention.filter((i) => i.kind === 'failed' || i.kind === 'inbound');
+    visible.sort((a, b) => attentionRank(a) - attentionRank(b) || b.at.localeCompare(a.at));
 
     // Agenda: la última respuesta a los recordatorios de cada cita
     const todayAppts = appts.filter((a) => a.date === today);
@@ -182,13 +210,13 @@ export class HomeService {
     };
 
     return {
-      attention: attention.slice(0, MAX_ITEMS),
+      attention: visible.slice(0, MAX_ITEMS),
       today: todayAppts.map(withReply),
       unmarked: unmarked.map(withReply),
     };
   }
 
-  /** Marca como atendida una alerta o falla (en el envío) o los mensajes de un número. */
+  /** Marca como atendida una alerta, falla o falta de respuesta (en el envío) o los mensajes de un número. */
   async resolve(orgId: string, kind: AttentionKind, id: string, user: AuthUser) {
     const mark = { at: FieldValue.serverTimestamp(), by: user.uid };
     if (kind === 'inbound') {
@@ -199,10 +227,12 @@ export class HomeService {
           batch.update(doc.ref, { handled: true, handled_at: mark.at, handled_by: mark.by });
         }
       }
+      // Atendido: el asistente con IA vuelve a responder a ese número
+      batch.set(this.ref(orgId).collection(COL.waContacts).doc(id), { assistant_paused_until: FieldValue.delete() }, { merge: true });
       await batch.commit();
       return { ok: true };
     }
-    if (kind !== 'alert' && kind !== 'failed') throw new BadRequestException('Tipo inválido');
+    if (!['alert', 'failed', 'no_response'].includes(kind)) throw new BadRequestException('Tipo inválido');
     const ref = this.outbox.col(orgId).doc(id);
     if (!(await ref.get()).exists) throw new NotFoundException('Envío no encontrado');
     await ref.update({ attention_resolved_at: mark.at, attention_resolved_by: mark.by });

@@ -10,3 +10,5 @@ export * from './appointments';
 export * from './clinical';
 export * from './metrics';
 export * from './home';
+export * from './chat';
+export * from './assistant';

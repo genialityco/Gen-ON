@@ -49,6 +49,7 @@ export class PatientsService {
       consent: d.consent ? { ...d.consent, granted_at: isoOrNull(d.consent.granted_at) } : null,
       opted_out: !!d.opted_out,
       opted_out_at: isoOrNull(d.opted_out_at),
+      opted_out_reason: d.opted_out_reason ?? null,
       created_at: isoOrNull(d.created_at),
       updated_at: isoOrNull(d.updated_at),
     };
@@ -63,6 +64,12 @@ export class PatientsService {
     const doc = await this.col(orgId).doc(id).get();
     if (!doc.exists) throw new NotFoundException('Paciente no encontrado');
     return this.toPatient(doc.id, doc.data()!);
+  }
+
+  /** Paciente de un número de WhatsApp (wa_id: solo dígitos con indicativo, igual que `phone`). */
+  async findByPhone(orgId: string, phone: string): Promise<Patient | null> {
+    const snap = await this.col(orgId).where('phone', '==', phone).limit(1).get();
+    return snap.empty ? null : this.toPatient(snap.docs[0].id, snap.docs[0].data());
   }
 
   private clean(input: PatientInput) {

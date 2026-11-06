@@ -10,6 +10,7 @@ import type {
   MonthlyUsage,
   OutboxItem,
   Patient,
+  PatientConversation,
   PatientImportInput,
   PatientImportResult,
   PatientInput,
@@ -96,6 +97,27 @@ export function useImportPatients(orgId: string) {
   });
 }
 
+/** Conversación de WhatsApp con el paciente; se refresca para ver lo que escribe. */
+export function useConversation(orgId: string, patientId: string) {
+  return useQuery({
+    queryKey: [...patientKeys.one(orgId, patientId), 'conversation'],
+    queryFn: async () => (await api.get<PatientConversation>(`/organizations/${orgId}/patients/${patientId}/conversation`)).data,
+    refetchInterval: 15_000,
+  });
+}
+
+export function useSendChat(orgId: string, patientId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (text: string) =>
+      (await api.post<PatientConversation>(`/organizations/${orgId}/patients/${patientId}/conversation`, { text })).data,
+    onSuccess: (conversation) => {
+      qc.setQueryData([...patientKeys.one(orgId, patientId), 'conversation'], conversation);
+      qc.invalidateQueries({ queryKey: homeKey(orgId) });
+    },
+  });
+}
+
 export function useUpdatePatient(orgId: string, id: string) {
   const invalidate = useInvalidateAll(orgId);
   return useMutation({
@@ -156,10 +178,11 @@ export function useManualSend(orgId: string) {
   });
 }
 
-export function useUsage(orgId: string) {
+/** Uso del mes (YYYY-MM); sin mes, el mes en curso. */
+export function useUsage(orgId: string, month?: string) {
   return useQuery({
-    queryKey: patientKeys.usage(orgId),
-    queryFn: async () => (await api.get<MonthlyUsage>(`/organizations/${orgId}/usage`)).data,
+    queryKey: [...patientKeys.usage(orgId), month ?? 'current'],
+    queryFn: async () => (await api.get<MonthlyUsage>(`/organizations/${orgId}/usage`, { params: month ? { month } : {} })).data,
   });
 }
 
