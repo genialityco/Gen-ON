@@ -15,7 +15,9 @@ function NeedsToken({ conn }: Pick<StepProps, 'conn'>) {
   if (conn.has_access_token) return null;
   return (
     <Alert color="gray" icon={<IconInfoCircle />} mb="md">
-      Primero carga el token del usuario del sistema (paso 5).
+      {conn.mode === 'embedded'
+        ? 'Primero conecta WhatsApp con el Registro insertado.'
+        : 'Primero carga el token del usuario del sistema (paso 5).'}
     </Alert>
   );
 }
@@ -33,19 +35,26 @@ export function PhoneStep({ orgId, conn }: StepProps) {
       <StepHeader title="Cuenta de WhatsApp y número">
         Puede ser el número actual de la clínica o uno nuevo. Debe poder recibir un SMS o una llamada.
       </StepHeader>
-      <Guide
-        items={[
-          <>
-            Si el número está en la app de WhatsApp o WhatsApp Business, hay que <b>eliminar esa cuenta</b>{' '}
-            desde el teléfono antes de agregarlo (se pierde el historial del teléfono).
-          </>,
-          <>
-            En el <MetaLink href="https://business.facebook.com/wa/manage/phone-numbers/">administrador de WhatsApp</MetaLink>,{' '}
-            <b>Agregar número</b> con el nombre visible de la clínica (debe parecerse al nombre del negocio).
-          </>,
-          <>Volver aquí, actualizar la lista y elegirlo.</>,
-        ]}
-      />
+      {conn.mode === 'embedded' ? (
+        <Text size="sm" c="dimmed" mb="md">
+          El número se agrega en la ventana de Meta al conectar WhatsApp. Aquí se ve su estado; si la cuenta tiene
+          varios números, elige el que usará Gen.ON.
+        </Text>
+      ) : (
+        <Guide
+          items={[
+            <>
+              Si el número está en la app de WhatsApp o WhatsApp Business, hay que <b>eliminar esa cuenta</b>{' '}
+              desde el teléfono antes de agregarlo (se pierde el historial del teléfono).
+            </>,
+            <>
+              En el <MetaLink href="https://business.facebook.com/wa/manage/phone-numbers/">administrador de WhatsApp</MetaLink>,{' '}
+              <b>Agregar número</b> con el nombre visible de la clínica (debe parecerse al nombre del negocio).
+            </>,
+            <>Volver aquí, actualizar la lista y elegirlo.</>,
+          ]}
+        />
+      )}
       <NeedsToken conn={conn} />
       <Facts
         rows={[
@@ -143,7 +152,7 @@ export function RegistrationStep({ orgId, conn }: StepProps) {
     return (
       <>
         <StepHeader title="Registro del número" />
-        <Alert color="gray">Primero elige el número (paso 6).</Alert>
+        <Alert color="gray">Primero elige el número.</Alert>
       </>
     );
   }
@@ -211,7 +220,54 @@ export function RegistrationStep({ orgId, conn }: StepProps) {
 
 // ---- 8. Webhook ----
 
-export function WebhookStep({ orgId, conn }: StepProps) {
+/** Registro insertado: un solo webhook para la app de Gen.iality; aquí solo se suscribe la cuenta. */
+function PlatformWebhookStep({ orgId, conn }: StepProps) {
+  const subscribe = useMetaAction(orgId, 'post', 'webhook/subscribe-waba');
+  const w = conn.webhook;
+  const p = conn.platform;
+  return (
+    <Stack gap={0}>
+      <StepHeader title="Webhook">
+        Por aquí llegan las respuestas de los pacientes y los estados de entrega. Con el Registro insertado, los
+        eventos de todas las clínicas llegan al webhook de la app de Gen.iality y se reparten por cuenta de
+        WhatsApp; cada clínica solo necesita que su cuenta esté suscrita a la app.
+      </StepHeader>
+      {!p.webhook_verified_at && (
+        <Alert color="yellow" mb="md">
+          Meta todavía no ha verificado el webhook de la plataforma. En la app de Gen.iality: WhatsApp →
+          Configuración → Webhook, con la URL de abajo y el META_WEBHOOK_VERIFY_TOKEN de la API, y los campos{' '}
+          <b>messages</b>, <b>message_template_status_update</b> y <b>account_update</b>.
+        </Alert>
+      )}
+      <Stack gap="sm" mb="md">
+        <CopyField label="URL del webhook de la plataforma" value={p.webhook_callback_url} />
+      </Stack>
+      <Facts
+        rows={[
+          ['Webhook de la plataforma verificado', fmtDate(p.webhook_verified_at) ?? 'No'],
+          ['App suscrita a la cuenta', fmtDate(w.waba_subscribed_at) ?? 'No'],
+          ['Último evento recibido', fmtDate(w.last_event_at)],
+        ]}
+      />
+      <Actions>
+        <Button
+          loading={subscribe.isPending}
+          disabled={!conn.waba_id || !conn.has_access_token}
+          onClick={() => subscribe.mutate()}
+          variant={w.waba_subscribed_at ? 'light' : 'filled'}
+        >
+          {w.waba_subscribed_at ? 'Suscribir de nuevo' : 'Suscribir la cuenta de WhatsApp'}
+        </Button>
+      </Actions>
+    </Stack>
+  );
+}
+
+export function WebhookStep(props: StepProps) {
+  return props.conn.mode === 'embedded' ? <PlatformWebhookStep {...props} /> : <ManualWebhookStep {...props} />;
+}
+
+function ManualWebhookStep({ orgId, conn }: StepProps) {
   const configure = useMetaAction(orgId, 'post', 'webhook/configure-app');
   const subscribe = useMetaAction(orgId, 'post', 'webhook/subscribe-waba');
   const rotate = useMetaAction(orgId, 'post', 'webhook/rotate-token');

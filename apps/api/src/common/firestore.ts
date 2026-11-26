@@ -35,6 +35,12 @@ export const COL = {
   users: 'users',
   /** Secretos por organización: solo el backend los lee (reglas lo niegan todo) */
   orgSecrets: 'org_secrets',
+  /** Cuenta de WhatsApp → organización (webhook único del Registro insertado). Solo el backend */
+  metaRoutes: 'meta_routes',
+  /** Estado global de la plataforma (p. ej. platform/meta: verificación del webhook). Solo el backend */
+  platform: 'platform',
+  /** Eventos del webhook de la plataforma de cuentas sin organización (para revisar) */
+  unroutedWebhookEvents: 'unrouted_webhook_events',
   // Subcolecciones de organizations/{orgId}
   members: 'members',
   metaConnection: 'meta_connection',
@@ -53,6 +59,8 @@ export const COL = {
   clinicalNotes: 'clinical_notes',
   clinicalAccess: 'clinical_access',
   usageMonthly: 'usage_monthly',
+  // Contenido aprobado del asistente con IA
+  assistantKnowledge: 'assistant_knowledge',
   // Biblioteca global de Gen.iality
   libraryTemplates: 'library_templates',
   libraryProtocols: 'library_protocols',

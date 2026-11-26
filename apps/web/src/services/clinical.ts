@@ -1,5 +1,13 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import type { ClinicalAccess, ClinicalBackground, ClinicalNote, ClinicalNoteInput, ClinicalView } from '@genon/shared';
+import type {
+  ClinicalAccess,
+  ClinicalBackground,
+  ClinicalImportInput,
+  ClinicalImportResult,
+  ClinicalNote,
+  ClinicalNoteInput,
+  ClinicalView,
+} from '@genon/shared';
 import { api } from '../lib/api';
 
 const base = (orgId: string, patientId: string) => `/organizations/${orgId}/patients/${patientId}/clinical`;
@@ -41,5 +49,14 @@ export function useClinicalAccessLog(orgId: string, patientId: string, enabled: 
     queryKey: clinicalKeys.log(orgId, patientId),
     queryFn: async () => (await api.get<ClinicalAccess[]>(`${base(orgId, patientId)}/access-log`)).data,
     enabled,
+  });
+}
+
+/** Importar fichas desde Excel: al terminar, las fichas abiertas se vuelven a cargar. */
+export function useImportClinical(orgId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (input: ClinicalImportInput) => (await api.post<ClinicalImportResult>(`/organizations/${orgId}/clinical/import`, input)).data,
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['clinical', orgId] }),
   });
 }

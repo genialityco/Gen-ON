@@ -3,6 +3,7 @@ import {
   Alert,
   Badge,
   Button,
+  Checkbox,
   Collapse,
   Group,
   Loader,
@@ -23,11 +24,15 @@ import dayjs from 'dayjs';
 import {
   BACKGROUND_FIELDS,
   CLINICAL_ACCESS_LABELS,
+  GUIDANCE_FIELDS,
+  GUIDANCE_MAX_LENGTH,
   NOTE_KIND_LABELS,
   ROLE_LABELS,
+  hasGuidance,
   type ClinicalBackground,
   type ClinicalNote,
   type NoteKind,
+  type PatientGuidance,
   type Role,
 } from '@genon/shared';
 import { useAddNote, useClinical, useClinicalAccessLog, useUpdateBackground } from '../../services/clinical';
@@ -176,6 +181,30 @@ function NoteView({ note: n, timezone }: { note: ClinicalNote; timezone: string 
       <Text size="sm" mt={4} style={{ whiteSpace: 'pre-wrap' }}>
         {n.body}
       </Text>
+      {n.guidance && (
+        <Paper withBorder p={6} mt={6} bg="teal.0">
+          <Group gap={6} mb={2}>
+            <Text size="xs" fw={600}>
+              Indicaciones para el paciente
+            </Text>
+            {n.share_with_assistant && (
+              <Badge size="xs" variant="light" color="teal">
+                Las usa el asistente IA
+              </Badge>
+            )}
+          </Group>
+          {GUIDANCE_FIELDS.filter((f) => n.guidance![f.key]).map((f) => (
+            <Text key={f.key} size="xs" style={{ whiteSpace: 'pre-wrap' }}>
+              <b>{f.label}:</b> {n.guidance![f.key]}
+            </Text>
+          ))}
+          {n.guidance.next_control && (
+            <Text size="xs">
+              <b>Próximo control sugerido:</b> {fmtDay(n.guidance.next_control, { day: 'numeric', month: 'long', year: 'numeric' })}
+            </Text>
+          )}
+        </Paper>
+      )}
       <Text size="xs" c="dimmed" mt={2}>
         {n.author_name} · {ROLE_LABELS[n.author_role] ?? n.author_role} · {fmtDateTime(n.created_at, timezone)}
       </Text>
@@ -235,12 +264,90 @@ function BackgroundForm({
 
 const emptyProcedure = { name: '', area: '', product: '', lot: '', quantity: '' };
 
+type GuidanceDraft = Record<(typeof GUIDANCE_FIELDS)[number]['key'], string> & { next_control: Date | null };
+const emptyGuidance: GuidanceDraft = { instructions: '', medications: '', restrictions: '', warning_signs: '', next_control: null };
+
+function toGuidance(g: GuidanceDraft): PatientGuidance | null {
+  const out: PatientGuidance = {
+    instructions: g.instructions.trim() || null,
+    medications: g.medications.trim() || null,
+    restrictions: g.restrictions.trim() || null,
+    warning_signs: g.warning_signs.trim() || null,
+    next_control: g.next_control ? dayjs(g.next_control).format('YYYY-MM-DD') : null,
+  };
+  return hasGuidance(out) ? out : null;
+}
+
+const GUIDANCE_HINTS: Record<(typeof GUIDANCE_FIELDS)[number]['key'], string> = {
+  instructions: 'Lavados nasales con suero 3 veces al día; dormir con la cabeza elevada.',
+  medications: 'Acetaminofén 500 mg cada 8 horas por 3 días.',
+  restrictions: 'No usar gafas ni hacer ejercicio hasta el control.',
+  warning_signs: 'Sangrado que no para en 10 minutos, fiebre mayor a 38 °C.',
+};
+
+/** Lo que se le indicó al paciente, escrito para él: el asistente IA lo puede repetir. */
+function GuidanceFields({
+  value,
+  onChange,
+  share,
+  onShare,
+}: {
+  value: GuidanceDraft;
+  onChange: (g: GuidanceDraft) => void;
+  share: boolean;
+  onShare: (v: boolean) => void;
+}) {
+  return (
+    <Paper withBorder p="xs" bg="gray.0">
+      <Stack gap={6}>
+        <Text size="sm" fw={500}>
+          Indicaciones para el paciente (opcional)
+        </Text>
+        <Text size="xs" c="dimmed">
+          Escritas para el paciente. El asistente IA las puede repetir tal cual si la clínica activó el uso de la ficha; el
+          texto de la nota nunca se comparte.
+        </Text>
+        <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="xs">
+          {GUIDANCE_FIELDS.map((f) => (
+            <Textarea
+              key={f.key}
+              size="xs"
+              label={f.label}
+              placeholder={GUIDANCE_HINTS[f.key]}
+              autosize
+              minRows={2}
+              maxLength={GUIDANCE_MAX_LENGTH}
+              value={value[f.key]}
+              onChange={(e) => onChange({ ...value, [f.key]: e.currentTarget.value })}
+            />
+          ))}
+        </SimpleGrid>
+        <Group align="end" justify="space-between">
+          <DatePickerInput
+            size="xs"
+            label="Próximo control sugerido"
+            value={value.next_control}
+            onChange={(d) => onChange({ ...value, next_control: d })}
+            minDate={new Date()}
+            valueFormat="D MMM YYYY"
+            clearable
+            w={200}
+          />
+          <Checkbox size="xs" label="El asistente IA puede usar estas indicaciones" checked={share} onChange={(e) => onShare(e.currentTarget.checked)} />
+        </Group>
+      </Stack>
+    </Paper>
+  );
+}
+
 function NoteForm({ orgId, patientId, onDone }: { orgId: string; patientId: string; onDone: () => void }) {
   const add = useAddNote(orgId, patientId);
   const [kind, setKind] = useState<Exclude<NoteKind, 'addendum'>>('evolution');
   const [date, setDate] = useState<Date | null>(new Date());
   const [body, setBody] = useState('');
   const [proc, setProc] = useState(emptyProcedure);
+  const [guidance, setGuidance] = useState<GuidanceDraft>(emptyGuidance);
+  const [share, setShare] = useState(true);
   const ready = !!date && !!body.trim() && (kind !== 'procedure' || !!proc.name.trim());
   const opt = (v: string) => v.trim() || null;
 
@@ -254,12 +361,15 @@ function NoteForm({ orgId, patientId, onDone }: { orgId: string; patientId: stri
           kind === 'procedure'
             ? { name: proc.name.trim(), area: opt(proc.area), product: opt(proc.product), lot: opt(proc.lot), quantity: opt(proc.quantity) }
             : null,
+        guidance: toGuidance(guidance),
+        share_with_assistant: share,
       },
       {
         onSuccess: () => {
           notifySuccess('Nota guardada');
           setBody('');
           setProc(emptyProcedure);
+          setGuidance(emptyGuidance);
           onDone();
         },
         onError: notifyError,
@@ -287,7 +397,8 @@ function NoteForm({ orgId, patientId, onDone }: { orgId: string; patientId: stri
             <TextInput size="xs" label="Cantidad o dosis" value={proc.quantity} onChange={(e) => setProc({ ...proc, quantity: e.currentTarget.value })} />
           </SimpleGrid>
         )}
-        <Textarea label="Nota" autosize minRows={3} value={body} onChange={(e) => setBody(e.currentTarget.value)} />
+        <Textarea label="Nota (uso interno)" autosize minRows={3} value={body} onChange={(e) => setBody(e.currentTarget.value)} />
+        <GuidanceFields value={guidance} onChange={setGuidance} share={share} onShare={setShare} />
         <Text size="xs" c="dimmed">
           Las notas no se editan ni se borran: para corregir, agrega una aclaración.
         </Text>

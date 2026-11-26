@@ -15,6 +15,7 @@ import { UsersModule } from './users/users.module';
 import { ClinicalModule } from './clinical/clinical.module';
 import { MetricsModule } from './metrics/metrics.module';
 import { HomeModule } from './home/home.module';
+import { AssistantModule } from './assistant/assistant.module';
 import { HealthController } from './health.controller';
 
 @Module({
@@ -33,6 +34,7 @@ import { HealthController } from './health.controller';
     ClinicalModule,
     MetricsModule,
     HomeModule,
+    AssistantModule,
   ],
   controllers: [HealthController],
   providers: [{ provide: APP_GUARD, useClass: FirebaseAuthGuard }],

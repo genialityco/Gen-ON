@@ -3,10 +3,13 @@ import { hasAtLeast, type Role } from '@genon/shared';
 import { CurrentOrgRole, OrgAccess } from '../auth/decorators';
 import { MetaSetupService } from './meta-setup.service';
 import { MetaErrorFilter } from './meta-error.filter';
+import { EmbeddedSignupService } from './embedded-signup.service';
 import {
   AppStepDto,
   BusinessStepDto,
   CompanyStepDto,
+  ConnectionModeDto,
+  EmbeddedSignupDto,
   PhoneStepDto,
   RegisterPhoneDto,
   RequestCodeDto,
@@ -24,11 +27,35 @@ import {
 @OrgAccess('staff')
 @Controller('organizations/:orgId/meta-setup')
 export class MetaSetupController {
-  constructor(private readonly setup: MetaSetupService) {}
+  constructor(
+    private readonly setup: MetaSetupService,
+    private readonly signup: EmbeddedSignupService,
+  ) {}
 
   @OrgAccess('operator')
   @Get()
   view(@Param('orgId') orgId: string, @CurrentOrgRole() role: Role) {
+    return this.setup.view(orgId, hasAtLeast(role, 'staff'));
+  }
+
+  @Put('mode')
+  async mode(@Param('orgId') orgId: string, @Body() body: ConnectionModeDto) {
+    await this.setup.setMode(orgId, body.mode);
+    return this.setup.view(orgId, true);
+  }
+
+  /**
+   * Registro insertado: lo puede hacer el administrador de la clínica con su
+   * propio Facebook (es quien administra el portafolio en Meta).
+   */
+  @OrgAccess('org_admin')
+  @Post('embedded-signup')
+  async embeddedSignup(
+    @Param('orgId') orgId: string,
+    @Body() body: EmbeddedSignupDto,
+    @CurrentOrgRole() role: Role,
+  ) {
+    await this.signup.complete(orgId, body);
     return this.setup.view(orgId, hasAtLeast(role, 'staff'));
   }
 

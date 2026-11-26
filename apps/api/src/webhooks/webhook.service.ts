@@ -5,9 +5,14 @@ import { FirebaseService } from '../firebase/firebase.service';
 import { COL, localDate } from '../common/firestore';
 import { MetaConnectionStore } from '../meta/meta-connection.store';
 import { MetaSetupService } from '../meta/meta-setup.service';
+import { MetaPlatform } from '../meta/meta-platform';
+import { EmbeddedSignupService } from '../meta/embedded-signup.service';
 import { isValidMetaSignature, safeEqual } from '../meta/signature';
 import { TemplatesService } from '../templates/templates.service';
 import { OutboxService } from '../patients/outbox.service';
+import { AutoReplyService } from '../patients/auto-reply.service';
+import { AlertNotifierService } from '../patients/alert-notifier.service';
+import { AssistantService } from '../assistant/assistant.service';
 
 /** Un estado nunca retrocede (read no vuelve a delivered); failed siempre gana. */
 const STATUS_RANK: Record<MessageDeliveryStatus, number> = {
@@ -24,6 +29,27 @@ export function nextStatus(
 ): MessageDeliveryStatus {
   if (!current) return incoming;
   return STATUS_RANK[incoming] > STATUS_RANK[current] ? incoming : current;
+}
+
+/**
+ * Agrupa los cambios del webhook de la plataforma por cuenta de WhatsApp. En
+ * casi todos los campos entry.id es la cuenta; en account_update, Meta pone la
+ * cuenta del cliente en value.waba_info.waba_id (entry.id puede ser otra).
+ */
+export function splitByWaba(body: any): Map<string, any[]> {
+  const out = new Map<string, any[]>();
+  for (const entry of body?.entry ?? []) {
+    for (const change of entry.changes ?? []) {
+      const wabaId = String(change.value?.waba_info?.waba_id ?? entry.id ?? '');
+      if (!wabaId) continue;
+      const list = out.get(wabaId) ?? [];
+      const last = list[list.length - 1];
+      if (last && last.id === entry.id && last.time === entry.time) last.changes.push(change);
+      else list.push({ ...entry, changes: [change] });
+      out.set(wabaId, list);
+    }
+  }
+  return out;
 }
 
 /** Texto legible de un mensaje entrante (para la bandeja y el motor de respuestas). */
@@ -59,6 +85,11 @@ export class WebhookService {
     private readonly setup: MetaSetupService,
     private readonly templates: TemplatesService,
     private readonly outbox: OutboxService,
+    private readonly replies: AutoReplyService,
+    private readonly notifier: AlertNotifierService,
+    private readonly assistant: AssistantService,
+    private readonly platform: MetaPlatform,
+    private readonly signup: EmbeddedSignupService,
   ) {}
 
   private org(orgId: string) {
@@ -81,7 +112,51 @@ export class WebhookService {
     if (!isValidMetaSignature(rawBody, signature, app_secret)) {
       throw new ForbiddenException('Firma inválida');
     }
+    await this.receiveForOrg(orgId, body);
+  }
 
+  // ---- Webhook de la plataforma (Registro insertado): /webhooks/meta ----
+
+  async verifyPlatform(mode: string, token: string, challenge: string): Promise<string> {
+    const expected = this.platform.verifyToken;
+    if (mode !== 'subscribe' || !expected || !token || !safeEqual(token, expected)) {
+      throw new ForbiddenException('Verify token inválido');
+    }
+    await this.store.markPlatformWebhookVerified();
+    this.logger.log('Webhook de la plataforma verificado');
+    return challenge;
+  }
+
+  /**
+   * Un solo webhook para todas las clínicas conectadas con el Registro
+   * insertado: se firma con la clave de la app de Gen.iality y cada cambio se
+   * reparte a la organización dueña de la cuenta de WhatsApp (meta_routes).
+   */
+  async receivePlatform(rawBody: Buffer | undefined, signature: string | undefined, body: any) {
+    const secret = this.platform.appSecret;
+    if (!secret) throw new NotFoundException('La app de la plataforma no está configurada');
+    if (!isValidMetaSignature(rawBody, signature, secret)) {
+      throw new ForbiddenException('Firma inválida');
+    }
+
+    for (const [wabaId, entries] of splitByWaba(body)) {
+      const orgId = await this.store.orgForWaba(wabaId);
+      const part = { object: body?.object, entry: entries };
+      if (!orgId) {
+        // Sin dueño (p. ej. una cuenta que aún no termina el registro): queda para revisar
+        this.logger.warn(`Webhook de la plataforma: cuenta de WhatsApp sin organización (${wabaId})`);
+        await this.firebase.db.collection(COL.unroutedWebhookEvents).add({
+          waba_id: wabaId,
+          body: part,
+          received_at: FieldValue.serverTimestamp(),
+        });
+        continue;
+      }
+      await this.receiveForOrg(orgId, part);
+    }
+  }
+
+  private async receiveForOrg(orgId: string, body: any) {
     // Primero el evento crudo: si esto falla, Meta reintenta
     const eventRef = await this.org(orgId).collection(COL.webhookEvents).add({
       body,
@@ -104,8 +179,13 @@ export class WebhookService {
 
     for (const entry of body?.entry ?? []) {
       for (const change of entry.changes ?? []) {
+        if (change.field === 'account_update') {
+          await this.signup.applyAccountUpdate(orgId, change.value);
+          continue;
+        }
         if (change.field === 'message_template_status_update') {
           await this.templates.applyWebhookStatus(orgId, change.value);
+          await this.notifier.applyWebhookStatus(orgId, change.value);
           continue;
         }
         if (change.field !== 'messages') continue; // el resto queda en webhook_events
@@ -212,8 +292,19 @@ export class WebhookService {
       return true;
     });
 
-    if (isNew && outboxReply) {
+    if (!isNew) return;
+    if (outboxReply) {
       await this.outbox.recordResponse(orgId, outboxReply.outboxId, outboxReply.index, reply?.title ?? '', at);
+    }
+    // Respuesta automática y bajas: si fallan, el mensaje ya quedó guardado y el error en el log
+    try {
+      if (outboxReply) await this.replies.onButton(orgId, outboxReply.outboxId, outboxReply.index, m.from);
+      else if (m.type === 'text' && !(await this.replies.onText(orgId, m.from, text))) {
+        // El asistente con IA tarda unos segundos: no se espera para responderle a Meta
+        void this.assistant.handle(orgId, m.from, m.id).catch((e) => this.logger.error(`Asistente ${orgId}: ${(e as Error).message}`));
+      }
+    } catch (e) {
+      this.logger.error(`Respuesta a ${m.id} (${orgId}): ${(e as Error).message}`);
     }
   }
 }

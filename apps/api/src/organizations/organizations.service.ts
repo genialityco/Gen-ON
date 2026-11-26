@@ -6,7 +6,19 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { FieldValue } from 'firebase-admin/firestore';
-import { DEFAULT_CONSENT_TEXT, type Member, type OrgRole, type Organization } from '@genon/shared';
+import {
+  DEFAULT_ASSISTANT,
+  DEFAULT_CONSENT_TEXT,
+  DEFAULT_NO_RESPONSE_HOURS,
+  MAX_ALERT_NOTIFY_PHONES,
+  hasFeature,
+  planWith,
+  normalizePatientPhone,
+  type Member,
+  type OrgRole,
+  type Organization,
+  type PlanFeature,
+} from '@genon/shared';
 import { FirebaseService } from '../firebase/firebase.service';
 import { COL, isoOrNull } from '../common/firestore';
 import { AuthUser } from '../auth/decorators';
@@ -58,6 +70,11 @@ export class OrganizationsService {
       consent_text: d.consent_text ?? DEFAULT_CONSENT_TEXT,
       consent_version: d.consent_version ?? 1,
       monthly_message_limit: d.monthly_message_limit ?? null,
+      alert_notify_phones: d.alert_notify_phones ?? [],
+      alert_notify_level: d.alert_notify_level ?? 'urgent',
+      no_response_hours: d.no_response_hours === undefined ? DEFAULT_NO_RESPONSE_HOURS : d.no_response_hours,
+      alert_template: d.alert_template ?? null,
+      assistant: { ...DEFAULT_ASSISTANT, ...(d.assistant ?? {}) },
       created_at: isoOrNull(d.created_at),
       updated_at: isoOrNull(d.updated_at),
     };
@@ -76,6 +93,15 @@ export class OrganizationsService {
     const doc = await this.orgs.doc(orgId).get();
     if (!doc.exists) throw new NotFoundException('Organización no encontrada');
     return this.toOrganization(doc.id, doc.data()!);
+  }
+
+  /** La organización si su plan incluye alguna de las funcionalidades; si no, 403 con el plan que las trae. */
+  async withFeature(orgId: string, ...features: PlanFeature[]): Promise<Organization> {
+    const org = await this.get(orgId);
+    if (!features.some((f) => hasFeature(org.plan, f))) {
+      throw new ForbiddenException(`Esta funcionalidad es parte del plan ${planWith(features[0])}`);
+    }
+    return org;
   }
 
   async create(input: CreateOrganizationDto, createdBy: string): Promise<Organization> {
@@ -122,6 +148,17 @@ export class OrganizationsService {
         patch.consent_version = org.consent_version + 1;
       }
     }
+    if (input.alert_notify_phones) {
+      const phones = [...new Set(input.alert_notify_phones.map((p) => p.trim()).filter(Boolean))];
+      if (phones.length > MAX_ALERT_NOTIFY_PHONES) throw new BadRequestException(`Máximo ${MAX_ALERT_NOTIFY_PHONES} celulares para las alertas`);
+      patch.alert_notify_phones = phones.map((p) => {
+        const n = normalizePatientPhone(p);
+        if (!n) throw new BadRequestException(`Celular inválido para las alertas: ${p}`);
+        return n;
+      });
+    }
+    if (input.alert_notify_level) patch.alert_notify_level = input.alert_notify_level;
+    if (input.no_response_hours !== undefined) patch.no_response_hours = input.no_response_hours;
     await this.orgs.doc(orgId).update(patch);
     return this.get(orgId);
   }

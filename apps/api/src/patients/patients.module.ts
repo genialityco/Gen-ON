@@ -8,12 +8,16 @@ import { OutboxService } from './outbox.service';
 import { UsageService } from './usage.service';
 import { AppointmentsService } from './appointments.service';
 import { DispatcherService } from './dispatcher.service';
+import { ChatService } from './chat.service';
+import { AutoReplyService } from './auto-reply.service';
+import { AlertNotifierService } from './alert-notifier.service';
+import { AlertNotifyController } from './alert-notify.controller';
 import { PatientsController } from './patients.controller';
 
 @Module({
   imports: [OrganizationsModule, TemplatesModule, MetaModule],
-  controllers: [PatientsController],
-  providers: [PatientsService, EnrollmentsService, AppointmentsService, OutboxService, UsageService, DispatcherService],
-  exports: [PatientsService, OutboxService, AppointmentsService],
+  controllers: [PatientsController, AlertNotifyController],
+  providers: [PatientsService, EnrollmentsService, AppointmentsService, OutboxService, UsageService, DispatcherService, AutoReplyService, AlertNotifierService, ChatService],
+  exports: [PatientsService, OutboxService, AppointmentsService, AutoReplyService, AlertNotifierService, ChatService],
 })
 export class PatientsModule {}

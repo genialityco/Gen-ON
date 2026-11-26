@@ -10,6 +10,7 @@ import { OutboxService } from './outbox.service';
 import { AppointmentsService } from './appointments.service';
 import { UsageService } from './usage.service';
 import { DispatcherService } from './dispatcher.service';
+import { ChatService } from './chat.service';
 import {
   AppointmentDto,
   AppointmentStatusDto,
@@ -21,6 +22,7 @@ import {
   OptOutDto,
   PatientDto,
   RescheduleDto,
+  SendChatDto,
 } from './dto';
 
 /** Pacientes, inscripciones, citas y parrilla: todo el equipo de la clínica. */
@@ -34,6 +36,7 @@ export class PatientsController {
     private readonly outbox: OutboxService,
     private readonly appointments: AppointmentsService,
     private readonly usage: UsageService,
+    private readonly chat: ChatService,
     private readonly templates: TemplatesService,
     private readonly dispatcher: DispatcherService,
   ) {}
@@ -76,6 +79,18 @@ export class PatientsController {
       this.outbox.listForPatient(orgId, id),
     ]);
     return { patient, enrollments, appointments, outbox };
+  }
+
+  // ---- WhatsApp uno a uno ----
+
+  @Get('patients/:id/conversation')
+  conversation(@Param('orgId') orgId: string, @Param('id') id: string, @CurrentUser() user: AuthUser) {
+    return this.chat.conversation(orgId, id);
+  }
+
+  @Post('patients/:id/conversation')
+  sendChat(@Param('orgId') orgId: string, @Param('id') id: string, @Body() body: SendChatDto, @CurrentUser() user: AuthUser) {
+    return this.chat.send(orgId, id, body.text, user);
   }
 
   @Put('patients/:id')

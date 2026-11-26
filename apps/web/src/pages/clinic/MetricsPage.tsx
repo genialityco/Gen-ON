@@ -16,7 +16,8 @@ import {
 import { BarChart, DonutChart, LineChart } from '@mantine/charts';
 import { DatePickerInput, type DatesRangeValue } from '@mantine/dates';
 import { IconAlertTriangle, IconInfoCircle } from '@tabler/icons-react';
-import { addDays, type MetricsBreakdownRow, type MetricsGranularity, type OrgMetrics } from '@genon/shared';
+import { addDays, hasFeature, type MetricsBreakdownRow, type MetricsGranularity, type OrgMetrics } from '@genon/shared';
+import { PlanGate } from '../../features/plans/PlanGate';
 import { useOrgId } from '../../auth/guards';
 import { useOrganization } from '../../services/organizations';
 import { useMetrics } from '../../services/metrics';
@@ -92,7 +93,20 @@ export function MetricsPage() {
     preset === 'custom' && custom[0] && custom[1]
       ? [ymdOf(custom[0]), ymdOf(custom[1])]
       : presetRange(preset === 'custom' ? '30d' : preset, today);
-  const { data: m, isLoading, isFetching } = useMetrics(orgId, from, to);
+  const allowed = !!org && hasFeature(org.plan, 'global_dashboard');
+  const { data: m, isLoading, isFetching } = useMetrics(orgId, from, to, allowed);
+
+  if (!org) return <Loader />;
+  if (!allowed) {
+    return (
+      <Stack>
+        <Title order={2}>Métricas</Title>
+        <PlanGate org={org} feature="global_dashboard" what="El tablero de métricas">
+          {null}
+        </PlanGate>
+      </Stack>
+    );
+  }
 
   return (
     <Stack>

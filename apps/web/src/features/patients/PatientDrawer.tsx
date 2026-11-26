@@ -19,6 +19,7 @@ import {
   Textarea,
   Timeline,
   Title,
+  Tooltip,
 } from '@mantine/core';
 import { DateTimePicker } from '@mantine/dates';
 import { useForm } from '@mantine/form';
@@ -26,6 +27,7 @@ import { modals } from '@mantine/modals';
 import { notifications } from '@mantine/notifications';
 import {
   IconBan,
+  IconBrandWhatsapp,
   IconCalendarTime,
   IconListDetails,
   IconMessage2,
@@ -64,20 +66,23 @@ import { useOrgRole } from '../../auth/AuthProvider';
 import { AppointmentCard } from '../appointments/AppointmentCard';
 import { AppointmentForm } from '../appointments/AppointmentForm';
 import { ClinicalRecordPanel } from '../clinical/ClinicalRecordPanel';
+import { ChatPanel } from './ChatPanel';
 
 interface Props {
   org: Organization;
   patientId: string;
   protocols: Protocol[];
   templates: Template[];
+  /** Pestaña con la que abre (p. ej. "chat" desde Requiere atención) */
+  initialTab?: string;
 }
 
-export function PatientDrawer({ org, patientId, protocols, templates }: Props) {
+export function PatientDrawer({ org, patientId, protocols, templates, initialTab }: Props) {
   const { data, isLoading } = usePatientDetail(org.id, patientId);
   const [editing, setEditing] = useState(false);
   const [enrolling, setEnrolling] = useState(false);
   const [sending, setSending] = useState(false);
-  const [tab, setTab] = useState('appointments');
+  const [tab, setTab] = useState(initialTab ?? 'appointments');
   const [appointment, setAppointment] = useState<Appointment | 'new' | null>(null);
   const role = useOrgRole(org.id);
   const cancelEnrollment = useCancelEnrollment(org.id);
@@ -111,9 +116,14 @@ export function PatientDrawer({ org, patientId, protocols, templates }: Props) {
         </div>
         <Group gap="xs">
           {patient.opted_out ? (
-            <Badge color="red" variant="light">
-              Dado de baja
-            </Badge>
+            <Tooltip
+              label={[patient.opted_out_reason, fmtDateTime(patient.opted_out_at, org.timezone)].filter(Boolean).join(' · ')}
+              disabled={!patient.opted_out_reason && !patient.opted_out_at}
+            >
+              <Badge color="red" variant="light">
+                Dado de baja
+              </Badge>
+            </Tooltip>
           ) : (
             <Button size="xs" variant="subtle" color="red" leftSection={<IconBan size={14} />} onClick={confirmOptOut}>
               Dar de baja
@@ -161,6 +171,9 @@ export function PatientDrawer({ org, patientId, protocols, templates }: Props) {
           </Tabs.Tab>
           <Tabs.Tab value="messages" leftSection={<IconMessage2 size={14} />}>
             Mensajes
+          </Tabs.Tab>
+          <Tabs.Tab value="chat" leftSection={<IconBrandWhatsapp size={14} />}>
+            WhatsApp
           </Tabs.Tab>
           {canReadClinical(role) && (
             <Tabs.Tab value="clinical" leftSection={<IconStethoscope size={14} />}>
@@ -300,6 +313,17 @@ export function PatientDrawer({ org, patientId, protocols, templates }: Props) {
               </Timeline>
             )}
           </Stack>
+        </Tabs.Panel>
+
+        <Tabs.Panel value="chat" pt="sm">
+          <ChatPanel
+            org={org}
+            patient={patient}
+            onSendTemplate={() => {
+              setTab('messages');
+              setSending(true);
+            }}
+          />
         </Tabs.Panel>
 
         {canReadClinical(role) && (

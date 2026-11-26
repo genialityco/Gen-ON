@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import type { MetaConnection, MetaWabaOption } from '@genon/shared';
+import type { EmbeddedSignupInput, MetaConnection, MetaWabaOption } from '@genon/shared';
 import { api, notifyError } from '../lib/api';
 import { orgKeys } from './organizations';
 
@@ -43,5 +43,19 @@ export function useMetaAction<T = void>(orgId: string, method: 'put' | 'post', p
       notifyError(e);
       qc.invalidateQueries({ queryKey: metaKeys.connection(orgId) });
     },
+  });
+}
+
+/** Completa el Registro insertado en la API con lo que devolvió Meta en el navegador. */
+export function useCompleteEmbeddedSignup(orgId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (body: EmbeddedSignupInput) =>
+      (await api.post<MetaConnection>(`/organizations/${orgId}/meta-setup/embedded-signup`, body)).data,
+    onSuccess: (conn) => {
+      qc.setQueryData(metaKeys.connection(orgId), conn);
+      qc.invalidateQueries({ queryKey: metaKeys.phones(orgId) });
+    },
+    onSettled: () => qc.invalidateQueries({ queryKey: metaKeys.connection(orgId) }),
   });
 }

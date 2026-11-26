@@ -1,5 +1,5 @@
 import { Badge, Button, Group, Paper, ScrollArea, Stack, Text, ThemeIcon } from '@mantine/core';
-import { IconAlertTriangle, IconCircleCheck, IconMessageCircle, IconSend } from '@tabler/icons-react';
+import { IconAlertTriangle, IconCircleCheck, IconClockHour4, IconMessageCircle, IconSend } from '@tabler/icons-react';
 import { useNavigate } from 'react-router-dom';
 import { ALERT_LEVEL_LABELS, ATTENTION_DAYS, type AttentionItem } from '@genon/shared';
 import { useResolveAttention } from '../../services/home';
@@ -14,6 +14,7 @@ function look(i: AttentionItem) {
     return { color: ALERT_COLORS[level], icon: <IconAlertTriangle size={16} />, label: ALERT_LEVEL_LABELS[level] };
   }
   if (i.kind === 'failed') return { color: 'red', icon: <IconSend size={16} />, label: 'No enviado' };
+  if (i.kind === 'no_response') return { color: 'yellow', icon: <IconClockHour4 size={16} />, label: 'Sin respuesta' };
   return { color: 'grape', icon: <IconMessageCircle size={16} />, label: i.count > 1 ? `Escribió (${i.count})` : 'Escribió' };
 }
 
@@ -52,7 +53,7 @@ export function AttentionPanel({ orgId, items, tz }: { orgId: string; items: Att
                         fw={500}
                         truncate
                         style={{ cursor: i.patient_id ? 'pointer' : undefined }}
-                        onClick={i.patient_id ? () => navigate(`/org/${orgId}/patients?p=${i.patient_id}`) : undefined}
+                        onClick={i.patient_id ? () => navigate(`/org/${orgId}/patients?p=${i.patient_id}${i.kind === 'inbound' ? '&t=chat' : ''}`) : undefined}
                       >
                         {i.name}
                       </Text>

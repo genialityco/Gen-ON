@@ -94,12 +94,12 @@ export class MetricsService {
     ]);
 
     const tpl = new Map<string, Template>(templates.map((t) => [t.key, t]));
-    const isConfirm = (key: string, index: number) => {
+    const actionType = (key: string, index: number) => {
       const t = tpl.get(key);
-      return (t?.approved?.buttons ?? t?.buttons ?? [])[index]?.action?.type === 'confirm';
+      return (t?.approved?.buttons ?? t?.buttons ?? [])[index]?.action?.type ?? null;
     };
 
-    const totals = { ...zero(), scheduled: 0, skipped: 0, cancelled: 0, confirmed: 0 };
+    const totals = { ...zero(), scheduled: 0, skipped: 0, cancelled: 0, confirmed: 0, alerts: 0 };
     const series = new Map<string, MetricsBucket>(bucketKeys(from, to, granularity).map((k) => [k, { key: k, ...zero() }]));
     const byProtocol = new Map<string, MetricsBreakdownRow>();
     const byTemplate = new Map<string, MetricsBreakdownRow>();
@@ -156,7 +156,9 @@ export class MetricsService {
       if (d.response) {
         inc('responses');
         responses.set(d.response.text, (responses.get(d.response.text) ?? 0) + 1);
-        if (isConfirm(d.template_key, d.response.index)) {
+        const action = actionType(d.template_key, d.response.index);
+        if (action === 'alert') totals.alerts++;
+        if (action === 'confirm') {
           totals.confirmed++;
           if (d.appointment_id) confirmedAppointments.add(d.appointment_id);
         }

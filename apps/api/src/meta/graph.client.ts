@@ -40,6 +40,21 @@ export class MetaGraphClient {
     return `${appId}|${appSecret}`;
   }
 
+  /**
+   * Registro insertado: cambia el código que devuelve FB.login por el token
+   * del negocio (usuario del sistema de integración del cliente). Solo desde
+   * el servidor: lleva la clave secreta de la app.
+   */
+  async exchangeCode(appId: string, appSecret: string, code: string): Promise<string> {
+    const res = await this.call<{ access_token?: string }>(() =>
+      this.http.get('/oauth/access_token', {
+        params: { client_id: appId, client_secret: appSecret, code },
+      }),
+    );
+    if (!res.access_token) throw new MetaApiError('Meta no devolvió el token del negocio', 502);
+    return res.access_token;
+  }
+
   async get<T = any>(path: string, token: string, params: Record<string, unknown> = {}): Promise<T> {
     return this.call<T>(() => this.http.get(path, { params: { ...params, access_token: token } }));
   }

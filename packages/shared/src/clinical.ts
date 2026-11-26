@@ -44,6 +44,36 @@ export interface ProcedureDetails {
   quantity: string | null;
 }
 
+/**
+ * Lo que el profesional le indicó al paciente en esta atención, escrito para
+ * él. A diferencia del texto de la nota (uso interno), el asistente con IA lo
+ * puede repetir tal cual si la clínica lo permite (`share_with_assistant`).
+ */
+export interface PatientGuidance {
+  /** Cuidados e indicaciones */
+  instructions: string | null;
+  /** Medicamentos formulados, como los indicó el profesional */
+  medications: string | null;
+  /** Qué evitar y hasta cuándo */
+  restrictions: string | null;
+  /** Signos de alarma de este paciente: si los reporta, el asistente lo pasa como urgente */
+  warning_signs: string | null;
+  /** Próximo control sugerido (YYYY-MM-DD) */
+  next_control: string | null;
+}
+
+export const GUIDANCE_FIELDS = [
+  { key: 'instructions', label: 'Cuidados e indicaciones' },
+  { key: 'medications', label: 'Medicamentos formulados' },
+  { key: 'restrictions', label: 'Qué evitar' },
+  { key: 'warning_signs', label: 'Signos de alarma' },
+] as const;
+
+export const GUIDANCE_MAX_LENGTH = 2000;
+
+export const hasGuidance = (g: PatientGuidance | null | undefined) =>
+  !!g && (GUIDANCE_FIELDS.some((f) => !!g[f.key]) || !!g.next_control);
+
 export interface ClinicalNote {
   id: string;
   patient_id: string;
@@ -54,6 +84,9 @@ export interface ClinicalNote {
   procedure: ProcedureDetails | null;
   /** Nota que aclara (solo en las aclaraciones) */
   amends: string | null;
+  guidance: PatientGuidance | null;
+  /** El asistente con IA puede usar `guidance` con el paciente */
+  share_with_assistant: boolean;
   author_uid: string;
   author_name: string;
   author_role: Role;
@@ -66,14 +99,17 @@ export interface ClinicalNoteInput {
   body: string;
   procedure?: ProcedureDetails | null;
   amends?: string | null;
+  guidance?: PatientGuidance | null;
+  share_with_assistant?: boolean;
 }
 
-export type ClinicalAccessAction = 'view' | 'update_background' | 'add_note';
+export type ClinicalAccessAction = 'view' | 'update_background' | 'add_note' | 'assistant';
 
 export const CLINICAL_ACCESS_LABELS: Record<ClinicalAccessAction, string> = {
   view: 'Consultó',
   update_background: 'Actualizó antecedentes',
   add_note: 'Agregó nota',
+  assistant: 'Consultó el asistente IA',
 };
 
 export interface ClinicalAccess {
@@ -91,4 +127,38 @@ export interface ClinicalView {
   record: ClinicalRecord;
   notes: ClinicalNote[];
   can_write: boolean;
+}
+
+/** Filas por importación de fichas desde Excel. */
+export const CLINICAL_IMPORT_MAX = 1000;
+
+/**
+ * Una fila del Excel de fichas: el paciente (celular o documento), sus
+ * antecedentes (solo se cambian los que vienen) y, si trae contenido, una nota
+ * con sus indicaciones para el paciente.
+ */
+export interface ClinicalImportRow {
+  patient: string;
+  date: string | null;
+  kind: Exclude<NoteKind, 'addendum'> | null;
+  procedure: string | null;
+  area: string | null;
+  /** Nota interna; si falta se usa "Importado desde Excel" */
+  body: string | null;
+  background: Partial<ClinicalBackground>;
+  guidance: Partial<PatientGuidance>;
+  share_with_assistant: boolean | null;
+}
+
+export interface ClinicalImportInput {
+  rows: ClinicalImportRow[];
+  /** Nombre del archivo, para la nota y la auditoría */
+  source: string;
+}
+
+export interface ClinicalImportResult {
+  notes: number;
+  backgrounds: number;
+  errors: number;
+  rows: { index: number; status: 'ok' | 'error'; message: string | null }[];
 }

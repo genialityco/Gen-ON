@@ -1,7 +1,7 @@
 import { Alert, Badge, Button, Grid, Group, Loader, Paper, Progress, SimpleGrid, Stack, Text, Title } from '@mantine/core';
 import { IconBrandWhatsapp, IconCalendarEvent, IconInfoCircle, IconUserPlus } from '@tabler/icons-react';
 import { Link } from 'react-router-dom';
-import { MESSAGE_LIMIT_WARN, ORG_STATUS_LABELS, PLANS, addDays, zonedTime } from '@genon/shared';
+import { MESSAGE_LIMIT_WARN, ORG_STATUS_LABELS, PLANS, addDays, hasFeature, zonedTime } from '@genon/shared';
 import { useOrgId } from '../../auth/guards';
 import { useOrganization } from '../../services/organizations';
 import { useMetaConnection } from '../../services/metaSetup';
@@ -81,9 +81,11 @@ export function ClinicHomePage() {
             <Button component={Link} to={`/org/${orgId}/schedule`} variant="subtle" size="xs" px={0}>
               Ver parrilla
             </Button>
-            <Button component={Link} to={`/org/${orgId}/metrics`} variant="subtle" size="xs" px={0}>
-              Ver métricas
-            </Button>
+            {hasFeature(org.plan, 'global_dashboard') && (
+              <Button component={Link} to={`/org/${orgId}/metrics`} variant="subtle" size="xs" px={0}>
+                Ver métricas
+              </Button>
+            )}
           </Group>
         </Paper>
 

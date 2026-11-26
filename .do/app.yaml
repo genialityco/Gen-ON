@@ -49,7 +49,27 @@ services:
       - key: META_GRAPH_VERSION
         scope: RUN_TIME
         value: v22.0
+      # App de Meta de Gen.iality (proveedor de tecnología)
+      - key: META_APP_ID
+        scope: RUN_TIME
+        type: SECRET
+      - key: META_APP_SECRET
+        scope: RUN_TIME
+        type: SECRET
+      - key: META_ES_CONFIG_ID
+        scope: RUN_TIME
+        type: SECRET
+      - key: META_WEBHOOK_VERIFY_TOKEN
+        scope: RUN_TIME
+        type: SECRET
       # Solo producción envía la parrilla
       - key: DISPATCH_ENABLED
         scope: RUN_TIME
         value: "true"
+      # Asistente con IA (plan IA Oráculo)
+      - key: GEMINI_API_KEY
+        scope: RUN_TIME
+        type: SECRET
+      - key: GEMINI_MODEL
+        scope: RUN_TIME
+        value: gemini-3.5-flash-lite

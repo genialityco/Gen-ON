@@ -2,6 +2,7 @@ import { BadRequestException, Injectable, Logger } from '@nestjs/common';
 import { FieldValue } from 'firebase-admin/firestore';
 import type {
   CompanyStepInput,
+  MetaConnectionMode,
   MetaPhoneNumberOption,
   MetaTokenInfo,
   MetaWabaOption,
@@ -63,6 +64,13 @@ export class MetaSetupService {
     await this.orgs.get(orgId);
     if (includeSecrets) await this.store.ensureVerifyToken(orgId);
     return this.store.view(orgId, includeSecrets);
+  }
+
+  /** Cambia la forma de conexión; lo ya guardado (token, número) se conserva. */
+  async setMode(orgId: string, mode: MetaConnectionMode) {
+    await this.orgs.get(orgId);
+    await this.store.update(orgId, { mode });
+    await this.updateWebhookStep(orgId);
   }
 
   // ---- 1. Empresa ----
@@ -143,45 +151,13 @@ export class MetaSetupService {
     if (!d.app_id || !app_secret) throw new BadRequestException('Primero configura la app (paso 4)');
 
     let info: MetaTokenInfo;
-    const warnings: string[] = [];
+    let warnings: string[];
     try {
-      const res = await this.graph.get('/debug_token', MetaGraphClient.appToken(d.app_id, app_secret), {
-        input_token: token,
-      });
-      const t = res.data ?? {};
-      if (!t.is_valid) throw new MetaApiError(t.error?.message || 'El token no es válido', 400);
-      if (String(t.app_id) !== String(d.app_id)) {
-        throw new MetaApiError('El token es de otra app: genéralo con la app del paso 4', 400);
-      }
-      const scopes: string[] = t.scopes ?? [];
-      const missing = REQUIRED_SCOPES.filter((s) => !scopes.includes(s));
-      if (missing.length) {
-        throw new MetaApiError(`Al token le faltan permisos: ${missing.join(', ')}`, 400);
-      }
-      const wabaIds = new Set<string>();
-      for (const g of t.granular_scopes ?? []) {
-        if (g.scope === 'whatsapp_business_management') {
-          for (const id of g.target_ids ?? []) wabaIds.add(String(id));
-        }
-      }
-      const expiresAt = t.expires_at ? new Date(t.expires_at * 1000) : null;
-      if (t.type !== 'SYSTEM_USER') {
-        warnings.push('No es un token de usuario del sistema');
-      }
-      if (expiresAt && expiresAt.getTime() - Date.now() < TOKEN_WARN_DAYS * 86_400_000) {
-        warnings.push(`Vence el ${expiresAt.toISOString().slice(0, 10)}: genera uno que no venza`);
-      }
-      if (!scopes.includes('business_management')) {
+      ({ info, warnings } = await this.inspectToken(token, d.app_id, app_secret));
+      if (info.type !== 'SYSTEM_USER') warnings.unshift('No es un token de usuario del sistema');
+      if (!info.scopes.includes('business_management')) {
         warnings.push('Sin business_management no se puede leer la verificación del negocio');
       }
-      info = {
-        type: t.type ?? null,
-        app_id: String(t.app_id),
-        expires_at: expiresAt ? expiresAt.toISOString() : null,
-        scopes,
-        waba_ids: [...wabaIds],
-        checked_at: new Date().toISOString(),
-      };
     } catch (e) {
       await this.failStep(orgId, 'system_user', e);
       return;
@@ -246,7 +222,7 @@ export class MetaSetupService {
   async refreshPhone(orgId: string) {
     const token = await this.requireToken(orgId);
     const d = await this.store.raw(orgId);
-    if (!d.phone_number_id) throw new BadRequestException('Primero elige el número (paso 6)');
+    if (!d.phone_number_id) throw new BadRequestException('Primero elige el número');
     const p = await this.getPhone(d.phone_number_id, token);
     await this.store.update(orgId, {
       display_phone_number: p.display_phone_number,
@@ -352,10 +328,13 @@ export class MetaSetupService {
   async subscribeWaba(orgId: string) {
     const token = await this.requireToken(orgId);
     const d = await this.store.raw(orgId);
-    if (!d.waba_id) throw new BadRequestException('Primero elige la cuenta de WhatsApp (paso 6)');
+    if (!d.waba_id) throw new BadRequestException('Primero elige la cuenta de WhatsApp');
     try {
       await this.graph.post(`/${d.waba_id}/subscribed_apps`, token);
       await this.store.update(orgId, { webhook: { waba_subscribed_at: FieldValue.serverTimestamp() } });
+      // Con el Registro insertado los eventos llegan al webhook de la plataforma
+      // y se reparten por cuenta de WhatsApp
+      if (this.store.mode(d) === 'embedded') await this.store.setRoute(orgId, d.waba_id);
     } catch (e) {
       await this.failStep(orgId, 'webhook', e);
     }
@@ -369,7 +348,14 @@ export class MetaSetupService {
   }
 
   async updateWebhookStep(orgId: string) {
-    const w = (await this.store.raw(orgId)).webhook ?? {};
+    const d = await this.store.raw(orgId);
+    const w = d.webhook ?? {};
+    if (this.store.mode(d) === 'embedded') {
+      // La URL es la de la plataforma (se verifica una sola vez para todas las clínicas)
+      if (w.waba_subscribed_at) await this.store.setStep(orgId, 'webhook', 'done');
+      else await this.store.setStep(orgId, 'webhook', 'pending', 'Falta: suscripción de la cuenta de WhatsApp');
+      return;
+    }
     if (w.verified_at && w.waba_subscribed_at) {
       await this.store.setStep(orgId, 'webhook', 'done');
     } else {
@@ -429,16 +415,64 @@ export class MetaSetupService {
 
   // ---- Apoyo ----
 
+  /**
+   * Revisa un token con debug_token (con el token de la app): que sea válido,
+   * de esa app y con los permisos de WhatsApp. Devuelve las cuentas de
+   * WhatsApp a las que da acceso y avisos (vencimiento cercano).
+   */
+  async inspectToken(
+    token: string,
+    appId: string,
+    appSecret: string,
+  ): Promise<{ info: MetaTokenInfo; warnings: string[] }> {
+    const res = await this.graph.get('/debug_token', MetaGraphClient.appToken(appId, appSecret), {
+      input_token: token,
+    });
+    const t = res.data ?? {};
+    if (!t.is_valid) throw new MetaApiError(t.error?.message || 'El token no es válido', 400);
+    if (String(t.app_id) !== String(appId)) {
+      throw new MetaApiError(`El token es de otra app (${t.app_id}), no de la app ${appId}`, 400);
+    }
+    const scopes: string[] = t.scopes ?? [];
+    const missing = REQUIRED_SCOPES.filter((s) => !scopes.includes(s));
+    if (missing.length) {
+      throw new MetaApiError(`Al token le faltan permisos: ${missing.join(', ')}`, 400);
+    }
+    const wabaIds = new Set<string>();
+    for (const g of t.granular_scopes ?? []) {
+      if (g.scope === 'whatsapp_business_management') {
+        for (const id of g.target_ids ?? []) wabaIds.add(String(id));
+      }
+    }
+    const warnings: string[] = [];
+    // expires_at = 0 significa que no vence
+    const expiresAt = t.expires_at ? new Date(t.expires_at * 1000) : null;
+    if (expiresAt && expiresAt.getTime() - Date.now() < TOKEN_WARN_DAYS * 86_400_000) {
+      warnings.push(`El token vence el ${expiresAt.toISOString().slice(0, 10)}`);
+    }
+    return {
+      info: {
+        type: t.type ?? null,
+        app_id: String(t.app_id),
+        expires_at: expiresAt ? expiresAt.toISOString() : null,
+        scopes,
+        waba_ids: [...wabaIds],
+        checked_at: new Date().toISOString(),
+      },
+      warnings,
+    };
+  }
+
   private async requireToken(orgId: string): Promise<string> {
     const { access_token } = await this.store.getSecrets(orgId);
-    if (!access_token) throw new BadRequestException('Primero carga el token (paso 5)');
+    if (!access_token) throw new BadRequestException('WhatsApp no está conectado: conecta la cuenta con Meta o carga el token');
     return access_token;
   }
 
   private async requirePhone(orgId: string) {
     const token = await this.requireToken(orgId);
     const d = await this.store.raw(orgId);
-    if (!d.phone_number_id) throw new BadRequestException('Primero elige el número (paso 6)');
+    if (!d.phone_number_id) throw new BadRequestException('Primero elige el número');
     return { token, phoneId: d.phone_number_id as string };
   }
 

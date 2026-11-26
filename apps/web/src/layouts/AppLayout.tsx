@@ -6,6 +6,8 @@ import {
   IconCalendarEvent,
   IconCalendarTime,
   IconChartBar,
+  IconReportAnalytics,
+  IconRobot,
   IconChevronDown,
   IconHome,
   IconListDetails,
@@ -55,9 +57,11 @@ export function AppLayout() {
         { to: `/org/${orgId}/protocols`, label: 'Protocolos', icon: IconListDetails },
         { to: `/org/${orgId}/templates`, label: 'Plantillas', icon: IconMessage2 },
         { to: `/org/${orgId}/metrics`, label: 'Métricas', icon: IconChartBar },
+        { to: `/org/${orgId}/report`, label: 'Reporte mensual', icon: IconReportAnalytics },
         ...(hasAtLeast(orgRole, 'org_admin')
           ? [
               { to: `/org/${orgId}/team`, label: 'Equipo', icon: IconUsers },
+              { to: `/org/${orgId}/assistant`, label: 'Asistente IA', icon: IconRobot },
               { to: `/org/${orgId}/settings`, label: 'Configuración', icon: IconSettings },
             ]
           : []),

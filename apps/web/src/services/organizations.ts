@@ -61,6 +61,18 @@ export function useUpdateSettings(orgId: string) {
   });
 }
 
+/** Plantilla de aviso de alertas al equipo: crearla en Meta, revisar su estado o enviar una prueba. */
+export function useAlertNotify(orgId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (action: 'activate' | 'refresh' | 'test') =>
+      (await api.post(`/organizations/${orgId}/alert-notify/${action}`)).data,
+    onSuccess: (_, action) => {
+      if (action !== 'test') qc.invalidateQueries({ queryKey: orgKeys.one(orgId) });
+    },
+  });
+}
+
 export function useMembers(orgId: string) {
   return useQuery({
     queryKey: orgKeys.members(orgId),
