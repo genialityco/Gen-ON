@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Alert, Grid, Loader, NavLink, Paper, Progress, Stack, Text, ThemeIcon } from '@mantine/core';
+import { Alert, Grid, Loader, NavLink, Paper, Progress, SegmentedControl, Stack, Text, ThemeIcon } from '@mantine/core';
 import {
   IconAlertTriangle,
   IconCircleCheck,
@@ -8,13 +8,17 @@ import {
   type Icon,
 } from '@tabler/icons-react';
 import {
-  META_SETUP_STEPS,
+  META_CONNECTION_MODE_LABELS,
   STEP_STATUS_LABELS,
+  metaRequiredSteps,
+  metaStepsFor,
+  type ConnectionModeInput,
   type MetaConnection,
+  type MetaConnectionMode,
   type MetaSetupStepKey,
   type StepStatus,
 } from '@genon/shared';
-import { useMetaConnection } from '../../services/metaSetup';
+import { useMetaAction, useMetaConnection } from '../../services/metaSetup';
 import { useOrganization } from '../../services/organizations';
 import { STEP_COMPONENTS } from './steps';
 
@@ -25,54 +29,65 @@ const STATUS_ICON: Record<StepStatus, { icon: Icon; color: string }> = {
   error: { icon: IconAlertTriangle, color: 'red' },
 };
 
-/** Pasos que deben estar listos para enviar mensajes a pacientes. */
-const REQUIRED: MetaSetupStepKey[] = [
-  'company',
-  'business',
-  'app',
-  'system_user',
-  'phone',
-  'registration',
-  'webhook',
-  'test',
-];
-
 /** Primer paso sin terminar: se abre ahí al entrar. */
 function firstOpenStep(conn: MetaConnection): MetaSetupStepKey {
-  return META_SETUP_STEPS.find((s) => conn.steps[s.key].status !== 'done')?.key ?? 'company';
+  return metaStepsFor(conn.mode).find((s) => conn.steps[s.key].status !== 'done')?.key ?? 'company';
 }
 
 /** Hay algo que llega por el webhook: se consulta cada pocos segundos. */
 function waitingOnMeta(conn: MetaConnection) {
-  return conn.steps.test.status === 'in_review' || (!!conn.webhook.app_subscribed_at && !conn.webhook.verified_at);
+  return (
+    conn.steps.test.status === 'in_review' ||
+    (conn.mode === 'manual' && !!conn.webhook.app_subscribed_at && !conn.webhook.verified_at)
+  );
 }
 
 export function MetaSetupWizard({ orgId }: { orgId: string }) {
   const [poll, setPoll] = useState(false);
   const { data: conn, isLoading } = useMetaConnection(orgId, { poll });
   const { data: org } = useOrganization(orgId);
+  const setMode = useMetaAction<ConnectionModeInput>(orgId, 'put', 'mode');
   const [selected, setSelected] = useState<MetaSetupStepKey | null>(null);
   const shouldPoll = conn ? waitingOnMeta(conn) : false;
   useEffect(() => setPoll(shouldPoll), [shouldPoll]);
 
   if (isLoading || !conn || !org) return <Loader />;
 
-  const current = selected ?? firstOpenStep(conn);
-  const done = REQUIRED.filter((k) => conn.steps[k].status === 'done').length;
+  const steps = metaStepsFor(conn.mode);
+  const required = metaRequiredSteps(conn.mode);
+  const current = selected && steps.some((s) => s.key === selected) ? selected : firstOpenStep(conn);
+  const done = required.filter((k) => conn.steps[k].status === 'done').length;
   const Step = STEP_COMPONENTS[current];
-  const ready = done === REQUIRED.length;
+  const ready = done === required.length;
 
   return (
     <Grid gutter="lg">
       <Grid.Col span={{ base: 12, md: 4 }}>
         <Paper withBorder p="xs">
-          <Stack gap={4} p="xs">
-            <Text size="sm" fw={500}>
-              {done} de {REQUIRED.length} pasos obligatorios
+          <Stack gap={6} p="xs">
+            <Text size="xs" c="dimmed">
+              Forma de conexión
             </Text>
-            <Progress value={(done / REQUIRED.length) * 100} size="sm" />
+            <SegmentedControl
+              size="xs"
+              fullWidth
+              value={conn.mode}
+              disabled={setMode.isPending}
+              onChange={(v) => {
+                setSelected(null);
+                setMode.mutate({ mode: v as MetaConnectionMode });
+              }}
+              data={(['embedded', 'manual'] as const).map((m) => ({
+                value: m,
+                label: m === 'embedded' ? 'Registro insertado' : 'Manual',
+              }))}
+            />
+            <Text size="sm" fw={500} mt={4}>
+              {done} de {required.length} pasos obligatorios
+            </Text>
+            <Progress value={(done / required.length) * 100} size="sm" />
           </Stack>
-          {META_SETUP_STEPS.map((s, i) => {
+          {steps.map((s, i) => {
             const state = conn.steps[s.key];
             const { icon: StatusIcon, color } = STATUS_ICON[state.status];
             return (
@@ -95,6 +110,12 @@ export function MetaSetupWizard({ orgId }: { orgId: string }) {
 
       <Grid.Col span={{ base: 12, md: 8 }}>
         <Stack>
+          {conn.mode === 'manual' && conn.platform.embedded_signup_available && (
+            <Alert color="blue" variant="light" title={META_CONNECTION_MODE_LABELS.embedded}>
+              Gen.iality ya es proveedor de tecnología: las clínicas nuevas se conectan desde una ventana de Meta, sin
+              app ni token propios. La conexión manual queda para las clínicas que ya tienen su app.
+            </Alert>
+          )}
           {ready && (
             <Alert color="teal" icon={<IconCircleCheck />} title="WhatsApp conectado">
               {conn.display_phone_number} ({conn.verified_name}) ya puede enviar mensajes.

@@ -8,8 +8,11 @@ import {
   MaxLength,
   MinLength,
 } from 'class-validator';
+import { META_CONNECTION_MODES, type MetaConnectionMode } from '@genon/shared';
 import type {
   AppStepInput,
+  ConnectionModeInput,
+  EmbeddedSignupInput,
   BusinessStepInput,
   CompanyStepInput,
   PhoneStepInput,
@@ -71,4 +74,15 @@ export class TestMessageDto implements TestMessageInput {
   @IsString() to!: string;
   @IsOptional() @IsString() template?: string;
   @IsOptional() @IsString() language?: string;
+}
+
+export class ConnectionModeDto implements ConnectionModeInput {
+  @IsIn(META_CONNECTION_MODES) mode!: MetaConnectionMode;
+}
+
+export class EmbeddedSignupDto implements EmbeddedSignupInput {
+  @IsString() @MinLength(10) @MaxLength(2000) code!: string;
+  @IsOptional() @IsString() @Matches(/^\d{5,25}$/) waba_id?: string;
+  @IsOptional() @IsString() @Matches(/^\d{5,25}$/) phone_number_id?: string;
+  @IsOptional() @IsString() @Matches(/^\d{5,25}$/) business_id?: string;
 }

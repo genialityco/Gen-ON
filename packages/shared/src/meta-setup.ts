@@ -1,25 +1,55 @@
 /**
  * Asistente de conexión de la cuenta de WhatsApp (Meta) de cada organización.
- * Cada clínica tiene su propio portafolio comercial y su propia app de Meta;
- * Gen.iality la configura. Meta no permite crear portafolios ni apps por API,
- * así que esos pasos son guiados y la plataforma valida lo que se ingresa; el
- * resto (número, registro, webhook, prueba) se hace desde aquí.
+ *
+ * Dos formas de conectar:
+ * - `embedded` (recomendada): Registro insertado de Meta con la app de
+ *   Gen.iality como proveedor de tecnología. La clínica entra con su Facebook,
+ *   elige o crea su portafolio, su cuenta de WhatsApp y su número, y Gen.ON
+ *   recibe un token del negocio. El webhook es uno solo para toda la plataforma.
+ * - `manual`: la clínica tiene su propia app de Meta y Gen.iality carga el
+ *   token de un usuario del sistema (clínicas conectadas antes de que
+ *   Gen.iality fuera proveedor de tecnología). Meta no permite crear
+ *   portafolios ni apps por API: esos pasos son guiados.
  */
+export const META_CONNECTION_MODES = ['embedded', 'manual'] as const;
+export type MetaConnectionMode = (typeof META_CONNECTION_MODES)[number];
+
+export const META_CONNECTION_MODE_LABELS: Record<MetaConnectionMode, string> = {
+  embedded: 'Registro insertado de Meta',
+  manual: 'Manual con app propia',
+};
+
+const BOTH = ['embedded', 'manual'] as const;
+
 export const META_SETUP_STEPS = [
-  { key: 'company', title: 'Datos de la empresa', mode: 'form' },
-  { key: 'business', title: 'Portafolio comercial', mode: 'guided' },
-  { key: 'verification', title: 'Verificación del negocio', mode: 'guided' },
-  { key: 'app', title: 'App de Meta', mode: 'guided' },
-  { key: 'system_user', title: 'Usuario del sistema y token', mode: 'guided' },
-  { key: 'phone', title: 'Cuenta de WhatsApp y número', mode: 'auto' },
-  { key: 'registration', title: 'Registro del número', mode: 'auto' },
-  { key: 'webhook', title: 'Webhook', mode: 'auto' },
-  { key: 'test', title: 'Mensaje de prueba', mode: 'auto' },
-  { key: 'templates', title: 'Plantillas', mode: 'auto' },
+  { key: 'company', title: 'Datos de la empresa', mode: 'form', flows: BOTH, required: true },
+  { key: 'signup', title: 'Conectar WhatsApp', mode: 'auto', flows: ['embedded'], required: true },
+  { key: 'business', title: 'Portafolio comercial', mode: 'guided', flows: ['manual'], required: true },
+  { key: 'verification', title: 'Verificación del negocio', mode: 'guided', flows: BOTH, required: false },
+  { key: 'app', title: 'App de Meta', mode: 'guided', flows: ['manual'], required: true },
+  { key: 'system_user', title: 'Usuario del sistema y token', mode: 'guided', flows: ['manual'], required: true },
+  { key: 'phone', title: 'Cuenta de WhatsApp y número', mode: 'auto', flows: BOTH, required: true },
+  { key: 'registration', title: 'Registro del número', mode: 'auto', flows: BOTH, required: true },
+  { key: 'webhook', title: 'Webhook', mode: 'auto', flows: BOTH, required: true },
+  { key: 'test', title: 'Mensaje de prueba', mode: 'auto', flows: BOTH, required: true },
+  { key: 'templates', title: 'Plantillas', mode: 'auto', flows: BOTH, required: false },
 ] as const;
 
 export type MetaSetupStepKey = (typeof META_SETUP_STEPS)[number]['key'];
 export type MetaSetupStepMode = (typeof META_SETUP_STEPS)[number]['mode'];
+export type MetaSetupStep = (typeof META_SETUP_STEPS)[number];
+
+/** Pasos que se muestran con una forma de conexión. */
+export function metaStepsFor(mode: MetaConnectionMode): MetaSetupStep[] {
+  return META_SETUP_STEPS.filter((s) => (s.flows as readonly string[]).includes(mode));
+}
+
+/** Pasos que deben estar listos para enviar mensajes a pacientes. */
+export function metaRequiredSteps(mode: MetaConnectionMode): MetaSetupStepKey[] {
+  return metaStepsFor(mode)
+    .filter((s) => s.required)
+    .map((s) => s.key);
+}
 
 export type StepStatus = 'pending' | 'in_review' | 'done' | 'error';
 
@@ -53,7 +83,10 @@ export type MessageDeliveryStatus = 'accepted' | 'sent' | 'delivered' | 'read' |
 /** Lo que el frontend ve de la conexión (nunca los secretos). */
 export interface MetaConnection {
   org_id: string;
+  mode: MetaConnectionMode;
   steps: Record<MetaSetupStepKey, StepState>;
+  /** App de Gen.iality (proveedor de tecnología): lo que necesita el Registro insertado */
+  platform: MetaPlatformInfo;
 
   business_id: string | null;
   business_name: string | null;
@@ -99,6 +132,18 @@ export interface MetaConnection {
   };
 
   updated_at: string | null;
+}
+
+export interface MetaPlatformInfo {
+  /** La API tiene META_APP_ID, META_APP_SECRET y META_ES_CONFIG_ID */
+  embedded_signup_available: boolean;
+  app_id: string | null;
+  /** Configuración de Facebook Login for Business (variante Registro insertado) */
+  config_id: string | null;
+  graph_version: string;
+  /** Webhook de la plataforma, uno para todas las clínicas conectadas con el Registro insertado */
+  webhook_callback_url: string;
+  webhook_verified_at: string | null;
 }
 
 export interface MetaPhoneNumberOption {
@@ -172,4 +217,18 @@ export interface TestMessageInput {
   /** Plantilla aprobada (por defecto hello_world / en_US) */
   template?: string;
   language?: string;
+}
+
+export interface ConnectionModeInput {
+  mode: MetaConnectionMode;
+}
+
+/** Lo que devuelve el Registro insertado en el navegador. */
+export interface EmbeddedSignupInput {
+  /** Código de FB.login (response_type: code); Meta deja cambiarlo por el token durante 5 min */
+  code: string;
+  /** Del evento WA_EMBEDDED_SIGNUP (FINISH); si no llegó, la API lo deduce del token */
+  waba_id?: string;
+  phone_number_id?: string;
+  business_id?: string;
 }

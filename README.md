@@ -54,6 +54,9 @@ organizations/{orgId}                  datos, plan, estado, zona horaria, hora d
 library_templates/{id}                 biblioteca global de Gen.iality
 library_protocols/{id}
 org_secrets/{orgId}                    token, clave de la app, verify token y PIN, cifrados (solo la API)
+meta_routes/{wabaId}                   cuenta de WhatsApp → organización (webhook de la plataforma; solo la API)
+platform/meta                          verificación del webhook de la plataforma (solo la API)
+unrouted_webhook_events/{id}           eventos de cuentas de WhatsApp sin organización, para revisar
 users/{uid}                            espejo de rol y organización
 ```
 
@@ -176,11 +179,47 @@ encargado del tratamiento y debe figurar como tal en la política de datos de la
 - La clínica gestiona su propio equipo (administradores, profesionales y operadores); el equipo Gen.iality
   asignado solo se gestiona desde Usuarios.
 
-## Webhook por organización
+## Conexión con Meta (proveedor de tecnología)
 
-`/webhooks/meta/{orgId}`: GET para la verificación (verify token propio de la organización) y POST
-para eventos, firmados con la clave secreta de **su** app. Los eventos repetidos no se cuentan dos
-veces y un estado nunca retrocede.
+Gen.iality es proveedor de tecnología (Tech Provider) de la plataforma de WhatsApp Business, con
+acceso avanzado a `whatsapp_business_messaging` y `whatsapp_business_management`. Cada organización
+se conecta de una de dos formas (`meta_connection/main.mode`):
+
+- **Registro insertado** (`embedded`, la de las organizaciones nuevas): en Configuración (administrador
+  de la clínica) o en la pestaña Conexión WhatsApp (equipo Gen.iality), **Conectar con Facebook** abre
+  el Registro insertado de Meta (v4): la clínica entra con su Facebook, elige o crea su portafolio, su
+  cuenta de WhatsApp y su número y lo verifica con el código. `POST /organizations/{org}/meta-setup/embedded-signup`
+  (`EmbeddedSignupService`) cambia el código por el **token del negocio** (vale 5 min), revisa que dé
+  acceso a esa cuenta, guarda la ruta en `meta_routes`, suscribe la app a la cuenta y registra el
+  número con un PIN aleatorio (si el número ya tenía verificación en dos pasos, se ingresa ese PIN en
+  "Registro del número"). La clínica agrega su método de pago en el administrador de WhatsApp: Meta
+  le cobra directamente. Una cuenta de WhatsApp solo puede estar en una organización.
+- **Manual** (`manual`, las organizaciones conectadas antes): la clínica tiene su propia app, Gen.iality
+  carga el identificador, la clave secreta y el token de un usuario del sistema, y el webhook es
+  `/webhooks/meta/{orgId}` (verify token propio y firma con la clave de **su** app).
+
+Las organizaciones sin `mode` guardado siguen en manual si ya tienen app; las nuevas van al Registro
+insertado si la API lo tiene configurado. El equipo Gen.iality puede cambiar la forma en el asistente.
+
+**Webhook de la plataforma** `/webhooks/meta`: GET con `META_WEBHOOK_VERIFY_TOKEN` y POST firmado
+con `META_APP_SECRET`. Cada cambio va a la organización de su cuenta de WhatsApp (`entry.id`; en
+`account_update`, `waba_info.waba_id`). Si la clínica le quita el acceso a la app
+(`PARTNER_APP_UNINSTALLED` o `PARTNER_REMOVED`), la conexión queda con error para volver a conectar.
+En los dos webhooks, los eventos repetidos no se cuentan dos veces y un estado nunca retrocede.
+
+### Configuración en Meta (una sola vez, app de Gen.iality)
+
+1. **Facebook Login for Business → Configuraciones → Crear**: variante de inicio de sesión
+   **Registro insertado de WhatsApp**, producto WhatsApp Cloud API, permisos
+   `whatsapp_business_management` y `whatsapp_business_messaging` (y `business_management` para leer
+   la verificación del negocio). Su identificador va en `META_ES_CONFIG_ID`.
+2. **Facebook Login for Business → Configuración**: activar "Inicio de sesión con el SDK de
+   JavaScript" y agregar los dominios del frontend (Netlify y, para probar, `localhost`) en
+   "Dominios permitidos" y en **Configuración → Básica → Dominios de la app**.
+3. **WhatsApp → Configuración → Webhook**: URL `{PUBLIC_API_URL}/webhooks/meta`, el
+   `META_WEBHOOK_VERIFY_TOKEN` y los campos `messages`, `message_template_status_update` y
+   `account_update`. Al guardar, Meta verifica la URL y el asistente lo muestra.
+4. La app en modo **activo** (publicada).
 
 ## Despliegue
 
@@ -190,6 +229,8 @@ veces y un estado nunca retrocede.
 - `SECRETS_KEY`: **la misma que en local**, porque local y producción usan la misma base. Si se
   pierde, hay que volver a cargar los tokens de todas las organizaciones.
 - `WEB_ORIGINS`: la URL de Netlify.
+- `META_APP_ID`, `META_APP_SECRET`, `META_ES_CONFIG_ID` y `META_WEBHOOK_VERIFY_TOKEN`: la app de
+  Gen.iality (ver "Configuración en Meta").
 
 **Web (Netlify)**: el repo con `netlify.toml`. Variables `VITE_API_URL` (URL de App Platform) y
 `VITE_FIREBASE_*`.

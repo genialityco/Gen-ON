@@ -4,6 +4,8 @@ import {
   META_SETUP_STEPS,
   type MessageDeliveryStatus,
   type MetaConnection,
+  type MetaConnectionMode,
+  type MetaPlatformInfo,
   type MetaSetupStepKey,
   type StepState,
   type StepStatus,
@@ -11,6 +13,7 @@ import {
 import { FirebaseService } from '../firebase/firebase.service';
 import { CryptoService } from '../common/crypto.service';
 import { COL, META_CONNECTION_DOC, isoOrNull, toPlain } from '../common/firestore';
+import { MetaPlatform } from './meta-platform';
 
 export type SecretKey = 'app_secret' | 'access_token' | 'verify_token' | 'pin';
 
@@ -24,6 +27,7 @@ export class MetaConnectionStore {
   constructor(
     private readonly firebase: FirebaseService,
     private readonly crypto: CryptoService,
+    private readonly platform: MetaPlatform,
   ) {}
 
   ref(orgId: string) {
@@ -89,8 +93,63 @@ export class MetaConnectionStore {
     return token;
   }
 
+  /**
+   * Forma de conexión. Las organizaciones de antes no la tienen guardada: si ya
+   * cargaron una app propia siguen en manual; las nuevas van al Registro
+   * insertado cuando la API lo tiene configurado.
+   */
+  mode(d: FirebaseFirestore.DocumentData): MetaConnectionMode {
+    if (d.mode === 'embedded' || d.mode === 'manual') return d.mode;
+    return d.app_id || !this.platform.embeddedSignupAvailable ? 'manual' : 'embedded';
+  }
+
+  // ---- Rutas del webhook de la plataforma: meta_routes/{wabaId} ----
+
+  private routeRef(wabaId: string) {
+    return this.firebase.db.collection(COL.metaRoutes).doc(wabaId);
+  }
+
+  async orgForWaba(wabaId: string): Promise<string | null> {
+    return (await this.routeRef(wabaId).get()).data()?.org_id ?? null;
+  }
+
+  /** Deja la cuenta de WhatsApp apuntando a la organización y quita la ruta anterior de esta. */
+  async setRoute(orgId: string, wabaId: string, previousWabaId?: string | null) {
+    const batch = this.firebase.db.batch();
+    if (previousWabaId && previousWabaId !== wabaId) {
+      const prev = await this.routeRef(previousWabaId).get();
+      if (prev.data()?.org_id === orgId) batch.delete(prev.ref);
+    }
+    batch.set(this.routeRef(wabaId), { org_id: orgId, updated_at: FieldValue.serverTimestamp() });
+    await batch.commit();
+  }
+
+  private platformRef() {
+    return this.firebase.db.collection(COL.platform).doc('meta');
+  }
+
+  async markPlatformWebhookVerified() {
+    await this.platformRef().set({ webhook_verified_at: FieldValue.serverTimestamp() }, { merge: true });
+  }
+
+  async platformInfo(): Promise<MetaPlatformInfo> {
+    const d = (await this.platformRef().get()).data() ?? {};
+    return {
+      embedded_signup_available: this.platform.embeddedSignupAvailable,
+      app_id: this.platform.appId,
+      config_id: this.platform.configId,
+      graph_version: process.env.META_GRAPH_VERSION || 'v22.0',
+      webhook_callback_url: this.platform.webhookCallbackUrl,
+      webhook_verified_at: isoOrNull(d.webhook_verified_at),
+    };
+  }
+
   async view(orgId: string, includeVerifyToken: boolean): Promise<MetaConnection> {
-    const [d, secrets] = await Promise.all([this.raw(orgId), this.getSecrets(orgId)]);
+    const [d, secrets, platform] = await Promise.all([
+      this.raw(orgId),
+      this.getSecrets(orgId),
+      this.platformInfo(),
+    ]);
     const steps = {} as Record<MetaSetupStepKey, StepState>;
     for (const { key } of META_SETUP_STEPS) {
       const s = d.steps?.[key];
@@ -114,7 +173,9 @@ export class MetaConnectionStore {
 
     return {
       org_id: orgId,
+      mode: this.mode(d),
       steps,
+      platform,
       business_id: d.business_id ?? null,
       business_name: d.business_name ?? null,
       business_verification_status: d.business_verification_status ?? null,

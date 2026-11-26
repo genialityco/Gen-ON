@@ -11,6 +11,7 @@ import {
 } from '@genon/shared';
 import { useOrgId } from '../../auth/guards';
 import { PlanGate } from '../../features/plans/PlanGate';
+import { WhatsAppConnectionCard } from '../../features/meta-setup/WhatsAppConnectionCard';
 import { useAlertNotify, useOrganization, useUpdateSettings } from '../../services/organizations';
 import { notifyError, notifySuccess } from '../../lib/api';
 
@@ -58,6 +59,8 @@ function SettingsForm({ org }: { org: NonNullable<ReturnType<typeof useOrganizat
   return (
     <Stack maw={760}>
       <Title order={2}>Configuración</Title>
+
+      <WhatsAppConnectionCard orgId={org.id} />
 
       <Paper withBorder p="md">
         <Stack>
